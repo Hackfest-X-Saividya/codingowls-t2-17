@@ -175,7 +175,76 @@ and `alternative_paths` must run and come back clean.
   - 30% or more of validations hitting the limit while still improving means a higher limit (max 5) may help.
   - With fewer than 5 finished validations, there is not enough data to judge.
 
-The UI never shows attempt counts or limits; the revision history is only visible under "Show technical details".
+### Persistent attempt history (MongoDB)
+
+Every attempt is stored in MongoDB as it runs (`services/validation_history.py`). The store is configured with `MONGODB_URI` / `MONGODB_DATABASE` (see docs/SETUP.md). There is no fallback store: without MongoDB, Validate Fix answers 503 with setup instructions, and scanning still works.
+
+**Investigations**
+
+An investigation is the effort to fix one problem: a chain, or a finding of one scan.
+
+- **Resume:** clicking Validate Fix again resumes the current investigation.
+  - Numbering continues (attempts 4, 5, …).
+  - The run starts from the best code so far (`best_fix`, kept on the investigation).
+  - Every earlier attempt is the fix generator's history.
+- **Limit:** `INVESTIGATION_MAX_ATTEMPTS` (default 10) counts attempts across all runs; each run still uses at most `FIX_MAX_ATTEMPTS`.
+- **No silent fresh start:** once an investigation has `passed` or is `exhausted`, further clicks are refused with 409 (`investigation_passed` / `investigation_exhausted`). Only an explicit request (`new_investigation: true`, the UI's "Start a new investigation") closes it and opens another.
+
+**Attempt lifecycle**
+
+1. The attempt is created as `RUNNING` **before** its fix is generated, with:
+   - its id, the investigation id and the run (`validation_id`)
+   - its `attempt_number` (unique per investigation) and the `parent_attempt_id` of the attempt before it, within a run and across clicks
+2. Then, as it progresses:
+   - `phase: generating` → the fix: strategy, `strategy_id`, the history note, the patch
+   - `phase: applying` → the one `code_hash`
+   - `phase: validating` → checks, outcome, `failure_reason`, diff, status, timestamps
+
+The attempt also records the finding, the rule and the vulnerability class.
+
+**Statuses**
+
+- `PASSED`
+- `FAILED`: includes a fix that adds a new vulnerability.
+- `INCONCLUSIVE`: the evidence does not decide (a stale patch, or conflicting evidence), or no fix could be generated.
+- `ERROR`: a scanner, OSV.dev or the test runner could not run, or the backend crashed during setup, generation or validation. The phase it reached is recorded. ERROR says nothing about the fix.
+- `SKIPPED`: the fix produced exactly the code an earlier attempt of the investigation already validated. It is recorded with its hash and that attempt, and not validated again.
+
+**Code hash**
+
+One SHA-256 per attempt, over the sorted relative paths and contents of the validated snapshot. `.git`, `node_modules` and virtualenvs are skipped. The same code gives the same hash in any location; when the patch did not apply, it is the unpatched code.
+
+**Integrity**
+
+- **Append-only:** documents are only updated while `RUNNING`, every write filters on that, and the code never deletes them. Unlike the earlier SQLite triggers, MongoDB cannot enforce this for other clients.
+- **Indexes:**
+  - unique `(investigation_id, attempt_number)`: also rejects racing writers
+  - unique partial index on the investigation's `current_key`: one current investigation per problem
+  - indexes for the history and strategy queries
+- **One run per investigation:** a run claims the investigation atomically. Attempt numbers are allocated per investigation, never from a global counter.
+- **Crashes and restarts:**
+  - A crash marks the run's `RUNNING` attempts `ERROR`; a run that fails before its first attempt (e.g. the clone) still records one `ERROR` attempt.
+  - The first MongoDB connection of a new backend process marks attempts left `RUNNING` as `ERROR` and releases stale claims. This assumes one backend process per database.
+
+**How history influences the next attempt**
+
+1. **Same investigation:**
+   - Earlier attempts are the generator's history: template retries target what is still open, and the LLM sees the earlier patches and failure reasons.
+   - The run resumes from the best code.
+   - Identical code is `SKIPPED`.
+2. **Rule-based strategy order** (`fix_planner.choose`, shared by the chain and single-finding paths). Each predefined strategy has a `strategy_id`: `template:<kind>`, `template:secret-env`, `template:dependency-upgrade` or `scan-suggestion`.
+   - Its record (passed / failed) is taken from evaluated attempts on the same rule or vulnerability class in other investigations, plus this investigation's own attempts. ERROR, SKIPPED and patches that did not apply don't count.
+   - If it failed at least `HISTORY_AVOID_AFTER_FAILURES` times (default 2) and never passed, it is tried **after** the LLM instead of first.
+   - It is never dropped: without an LLM, or when the LLM has no usable fix, it is still used as the fallback, so the rule-based behavior remains the baseline.
+   - The choice is recorded on the attempt (`strategy_id`, `selection_note`) and shown in the UI. With a single candidate (e.g. dependency upgrades), history changes nothing and no note is written.
+   - Free-form LLM fixes and developer fixes are not ranked.
+3. **LLM context:** the prompt gets each strategy's record and similar attempts elsewhere (most relevant first: same repo and file, same rule, same class; passes first). It asks the LLM to adapt, not copy, and to avoid approaches that failed.
+
+Every generated fix, from history-informed choices included, goes through the same validation checks. Nothing reuses an earlier patch directly. This is retrieval and re-ordering, not model training. No accuracy improvement has been measured; the tests show *that* history changes the choice, not that it improves outcomes.
+
+**API:** `GET /api/scan/{scan_id}/investigations/{investigation_id}` returns every attempt. A validation response carries `investigation_id`, `first_attempt` and `result`.
+
+The UI shows each run's attempts and the full attempt history, with statuses, strategy, code hash, failure reasons, history notes, and the patch and check results (collapsed).
 
 ## Safety and isolation
 

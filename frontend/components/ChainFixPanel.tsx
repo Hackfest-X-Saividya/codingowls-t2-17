@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { startValidation, type FixEdit, type FixValidation, type WeaknessChain } from "@/lib/api";
-import { FixCode, ValidationResult, usePolledValidation } from "./FixValidationView";
+import { ValidationStartError, startValidation, type FixEdit, type FixValidation, type WeaknessChain } from "@/lib/api";
+import { FixCode, NewInvestigationButton, ValidationResult, usePolledValidation } from "./FixValidationView";
 
 export { EVIDENCE_LABELS, ValidationBadge } from "./FixValidationView";
 
@@ -19,6 +19,8 @@ export const PLAIN_FIX: Record<string, string> = {
   open_redirect: "Only redirect to pages on your own site.",
 };
 
+const CLOSED = ["investigation_passed", "investigation_exhausted"];
+
 export default function ChainFixPanel({
   scanId,
   chain,
@@ -31,6 +33,7 @@ export default function ChainFixPanel({
   const [validation, setValidation] = usePolledValidation(scanId, initialValidation);
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState("");
+  const [closed, setClosed] = useState(false); // current investigation passed or used its attempts
 
   // Edits start from what is shown: the final code after a validation, else the suggestion
   const finished = validation && validation.state !== "running";
@@ -41,12 +44,14 @@ export default function ChainFixPanel({
     setEditing(false);
   }, [shownFix]);
 
-  const run = async (edits?: FixEdit[]) => {
+  const run = async (edits?: FixEdit[], newInvestigation = false) => {
     setError("");
+    setClosed(false);
     try {
-      setValidation(await startValidation(scanId, chain.id, edits));
+      setValidation(await startValidation(scanId, chain.id, edits, newInvestigation));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to start validation");
+      setClosed(err instanceof ValidationStartError && CLOSED.includes(err.code ?? ""));
     }
   };
 
@@ -109,9 +114,16 @@ export default function ChainFixPanel({
         )}
         <span className="text-[11px] text-slate-500">Runs on a copy of your code. Your repository isn&apos;t changed.</span>
       </div>
-      {error && <p role="alert" className="text-xs text-red-300">{error}</p>}
+      {error && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="alert" className="text-xs text-red-300">
+            {error}
+          </p>
+          {closed && <NewInvestigationButton onClick={() => run(undefined, true)} />}
+        </div>
+      )}
 
-      {validation && <ValidationResult validation={validation} />}
+      {validation && <ValidationResult validation={validation} onNewInvestigation={() => run(undefined, true)} />}
     </div>
   );
 }

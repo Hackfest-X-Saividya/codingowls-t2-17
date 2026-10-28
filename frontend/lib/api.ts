@@ -108,6 +108,10 @@ export interface ChainFix {
   remaining_paths: string[];
   tests: string[];
   origin: "template" | "ai" | "developer";
+  /** e.g. "template:sql_injection", "template:secret-env", "scan-suggestion", "ai", "developer" */
+  strategy_id?: string;
+  /** How past outcomes influenced choosing this strategy, if they did */
+  history_note?: string;
 }
 
 export interface WeaknessChain {
@@ -141,7 +145,16 @@ export interface ValidationCheck {
   status: "passed" | "failed" | "error" | "skipped";
   detail: string;
   evidence: Evidence[];
+  /** Could not run for reasons outside the code (scanner, OSV.dev, test runner) */
+  infrastructure?: boolean;
 }
+
+/**
+ * Status of one persisted attempt.
+ * ERROR = infrastructure problem or crash, not a verdict on the fix.
+ * SKIPPED = the fix produced code an earlier attempt already validated, so it was not run again.
+ */
+export type AttemptStatus = "RUNNING" | "PASSED" | "FAILED" | "INCONCLUSIVE" | "ERROR" | "SKIPPED";
 
 export interface ValidationAttempt {
   attempt: number;
@@ -161,6 +174,8 @@ export interface ValidationAttempt {
   diff: string;
   progress_score: number | null;
   improved: boolean | null;
+  code_hash: string | null;
+  record_status: AttemptStatus | null;
 }
 
 export interface FixValidation {
@@ -168,18 +183,65 @@ export interface FixValidation {
   scan_id: string;
   chain_id: string | null;
   finding_id: string | null;
+  investigation_id: string | null;
+  /** Attempt number of this run's first attempt within the investigation */
+  first_attempt: number;
   final_diff: string;
   state: "running" | "complete" | "failed";
   status: ValidationStatus | null;
+  result: AttemptStatus | null;
   message: string;
   attempts: ValidationAttempt[];
-  stop_reason: "passed" | "stalled" | "limit" | "inconclusive" | "no_fix" | "not_reproducible" | null;
+  stop_reason: "passed" | "stalled" | "limit" | "inconclusive" | "no_fix" | "not_reproducible" | "duplicate" | null;
+  /** Attempt number of the best code so far (the passing one, else the most improved) */
   best_attempt: number | null;
   /** The passing fix, or the best revision when none passed */
   final_fix: ChainFix | null;
   needs_manual_review: boolean;
   started_at: string;
   finished_at: string | null;
+}
+
+/** One persisted attempt; attempts are never overwritten. */
+export interface AttemptRecord {
+  attempt_id: string;
+  investigation_id: string;
+  validation_id: string;
+  attempt_number: number;
+  parent_attempt_id: string | null;
+  code_hash: string | null;
+  finding_id: string | null;
+  chain_id: string | null;
+  rule_id: string | null;
+  vuln_class: string | null;
+  /** How far the attempt got: setup | generating | applying | validating */
+  phase: string | null;
+  status: AttemptStatus;
+  outcome: ValidationStatus | null;
+  failure_reason: string | null;
+  strategy: string;
+  strategy_id: string;
+  selection_note: string;
+  fix_origin: string;
+  patch: FixEdit[];
+  diff: string;
+  checks: ValidationCheck[];
+  created_at: string;
+  finished_at: string | null;
+}
+
+/** Every attempt to fix one problem, across Validate Fix runs. */
+export interface Investigation {
+  investigation_id: string;
+  scan_id: string;
+  target_key: string;
+  status: "open" | "passed" | "exhausted" | "closed";
+  max_attempts: number;
+  active_validation_id: string | null;
+  best_attempt: number | null;
+  created_at: string;
+  updated_at: string;
+  attempts: AttemptRecord[];
 }
 
 export interface ScanResultsResponse {
@@ -208,6 +270,24 @@ export interface ScanHistoryItem {
   total: number;
   critical: number;
   high: number;
+}
+
+/** A refused validation start; `code` says why (e.g. investigation_passed, investigation_exhausted). */
+export class ValidationStartError extends Error {
+  constructor(
+    message: string,
+    public code: string | null = null,
+  ) {
+    super(message);
+  }
+}
+
+async function validationStartError(res: Response): Promise<ValidationStartError> {
+  const body = await res.json().catch(() => ({}));
+  const detail = body?.detail;
+  if (detail && typeof detail === "object" && typeof detail.message === "string")
+    return new ValidationStartError(detail.message, detail.code ?? null);
+  return new ValidationStartError(typeof detail === "string" ? detail : "Failed to start validation");
 }
 
 export async function startScan(repoUrl: string): Promise<ScanResponse> {
@@ -268,33 +348,32 @@ export async function startValidation(
   scanId: string,
   chainId: string,
   edits?: FixEdit[],
+  newInvestigation = false,
 ): Promise<FixValidation> {
   const res = await fetch(`${getApiUrl()}/api/scan/${scanId}/chains/${chainId}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(edits ? { edits } : {}),
+    body: JSON.stringify({ ...(edits ? { edits } : {}), ...(newInvestigation ? { new_investigation: true } : {}) }),
   });
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to start validation" }));
-    throw new Error(typeof error.detail === "string" ? error.detail : "Failed to start validation");
-  }
+  if (!res.ok) throw await validationStartError(res);
 
   return res.json();
 }
 
 /** Validate the fix for any single finding (code, dependency or secret). */
-export async function startFindingValidation(scanId: string, findingId: string): Promise<FixValidation> {
+export async function startFindingValidation(
+  scanId: string,
+  findingId: string,
+  newInvestigation = false,
+): Promise<FixValidation> {
   const res = await fetch(`${getApiUrl()}/api/scan/${scanId}/findings/${findingId}/validate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: "{}",
+    body: JSON.stringify(newInvestigation ? { new_investigation: true } : {}),
   });
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({ detail: "Failed to start validation" }));
-    throw new Error(typeof error.detail === "string" ? error.detail : "Failed to start validation");
-  }
+  if (!res.ok) throw await validationStartError(res);
 
   return res.json();
 }
@@ -304,6 +383,17 @@ export async function getValidation(scanId: string, validationId: string): Promi
 
   if (!res.ok) {
     throw new Error("Failed to load validation");
+  }
+
+  return res.json();
+}
+
+/** Every persisted attempt of an investigation, oldest first. */
+export async function getInvestigation(scanId: string, investigationId: string): Promise<Investigation> {
+  const res = await fetch(`${getApiUrl()}/api/scan/${scanId}/investigations/${investigationId}`);
+
+  if (!res.ok) {
+    throw new Error("Failed to load attempt history");
   }
 
   return res.json();

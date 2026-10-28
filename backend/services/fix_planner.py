@@ -15,6 +15,11 @@ Fixes come from three places:
   attempts; edits are checked against the original file before use
 - developer: edits supplied through the API
 
+Which candidate is tried first is decided by choose(), shared with
+finding_validation.py: the rule-based order, except that a predefined strategy
+with a record of only failures in comparable cases goes after the LLM (it stays
+the fallback). The record comes from the persisted validation history.
+
 Every fix is a list of line-range edits against the scanned revision; it is
 only ever applied to a sandbox copy (fix_validation.py), never to a real repo.
 """
@@ -27,7 +32,9 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from models.schemas import ChainFix, FixEdit, ValidationAttempt, WeaknessChain
+from typing import Awaitable, Callable
+
+from models.schemas import AttemptStatus, ChainFix, FixEdit, ValidationAttempt, WeaknessChain
 from services import chain_analysis
 from services.flow_analyzer import Flow, FlowAnalysis
 
@@ -84,7 +91,75 @@ def plan_fix(chain: WeaknessChain, analysis: FlowAnalysis, root: Path) -> ChainF
         remaining_paths=remaining_paths(chain, analysis),
         tests=planned_checks(chain),
         origin="template",
+        strategy_id=template_id(chain.kind),
     )
+
+
+def template_id(kind: str) -> str:
+    return f"template:{kind}"
+
+
+# ---------- history-informed choice between strategies ----------
+
+# strategy_id -> (passed, failed) in comparable cases elsewhere (validation_history.strategy_stats)
+StrategyStats = dict[str, tuple[int, int]]
+Candidate = tuple[str, Callable[[], Awaitable[Optional[ChainFix]]]]
+NOT_RANKED = {"", "ai", "developer"}  # free-form fixes: the LLM gets the history as context instead
+
+
+def strategy_record(strategy_id: str, stats: StrategyStats, history: list[ValidationAttempt]) -> tuple[int, int]:
+    """(passed, failed) for a strategy: other investigations' record plus this investigation's attempts.
+
+    Only evaluated attempts count: a patch that did not apply or a check that could not
+    run (ERROR) says nothing about the strategy.
+    """
+    passed, failed = stats.get(strategy_id, (0, 0))
+    for a in history:
+        if a.fix.strategy_id != strategy_id or any(c.name == "apply_patch" for c in a.checks):
+            continue
+        if a.record_status == AttemptStatus.PASSED:
+            passed += 1
+        elif a.record_status in (AttemptStatus.FAILED, AttemptStatus.INCONCLUSIVE):
+            failed += 1
+    return passed, failed
+
+
+def avoid_reason(strategy_id: str, stats: StrategyStats, history: list[ValidationAttempt]) -> Optional[str]:
+    """Why history advises against trying this predefined strategy first, or None."""
+    from utils.config import settings
+
+    if strategy_id in NOT_RANKED:
+        return None
+    passed, failed = strategy_record(strategy_id, stats, history)
+    if passed == 0 and failed >= settings.HISTORY_AVOID_AFTER_FAILURES:
+        return f"{strategy_id} failed {failed} time(s) in comparable cases and never passed"
+    return None
+
+
+async def choose(
+    candidates: list[Candidate], history: list[ValidationAttempt], stats: StrategyStats,
+    is_new: Callable[[Optional[ChainFix]], bool],
+) -> Optional[ChainFix]:
+    """The first new fix from the candidates, in the rule-based order, except that predefined
+    strategies history advises against are tried last (still the fallback, never dropped).
+    Candidates are built lazily, so the LLM is only called when it is reached."""
+    reasons = {sid: avoid_reason(sid, stats, history) for sid, _ in candidates}
+    ranked = sorted(candidates, key=lambda c: reasons[c[0]] is not None)  # stable: keeps the rule-based order
+    for sid, make in ranked:
+        fix = await make()
+        if not is_new(fix):
+            continue
+        note = ""  # only when history changed the order; with a single candidate it changes nothing
+        if reasons[sid] and len(candidates) > 1:
+            note = f"Used as the fallback although {reasons[sid]}."
+        elif any(reasons[s] for s, _ in candidates if s != sid):
+            note = "Tried first because " + "; ".join(r for r in reasons.values() if r) + "."
+        return fix.model_copy(update={"strategy_id": fix.strategy_id or sid, "history_note": note})
+    return None
+
+
+async def _value(fix: Optional[ChainFix]) -> Optional[ChainFix]:
+    return fix
 
 
 def remaining_paths(chain: WeaknessChain, analysis: FlowAnalysis) -> list[str]:
@@ -129,26 +204,34 @@ async def next_fix(
     root: Path,
     history: list[ValidationAttempt],
     use_ai: bool,
+    lessons: str = "",
+    stats: Optional[StrategyStats] = None,
 ) -> Optional[ChainFix]:
-    """A fix that differs from every earlier attempt, built from the latest failure evidence."""
+    """A fix that differs from every earlier attempt, built from the latest failure evidence.
+
+    `history` may include attempts from earlier runs of the same investigation;
+    `lessons` summarises outcomes of similar fixes elsewhere (LLM context) and `stats`
+    is the per-strategy record in comparable cases (strategy order, see choose()).
+    """
+    stats = stats or {}
     tried = {_edits_key(a.fix.edits) for a in history}
 
     def new(fix: Optional[ChainFix]) -> bool:
         return bool(fix and fix.edits and _edits_key(fix.edits) not in tried)
 
+    template = template_id(chain.kind)
     if not history:
-        first = chain.fix or plan_fix(chain, analysis, root)
-        return first if new(first) else None
-    # `root`/`analysis` are the current, already-improved code: the next fix only adds what is
-    # still missing. Deterministic first (reproducible, no API quota), then the LLM.
-    remaining = _fix_remaining(analysis, root, history[-1])
-    if new(remaining):
-        return remaining
-    if use_ai:
-        ai = await ai_fix(chain, analysis, root, history)
-        if new(ai):
-            return ai
-    return None
+        candidates: list[Candidate] = [(template, lambda: _value(chain.fix or plan_fix(chain, analysis, root)))]
+        # The rule-based first attempt has no LLM step; history can only add one in front of a failing template
+        with_ai = use_ai and avoid_reason(template, stats, history) is not None
+    else:
+        # `root`/`analysis` are the current, already-improved code: the next fix only adds what is
+        # still missing. Deterministic first (reproducible, no API quota), then the LLM.
+        candidates = [(template, lambda: _value(_fix_remaining(analysis, root, history[-1])))]
+        with_ai = use_ai
+    if with_ai:
+        candidates.append(("ai", lambda: ai_fix(chain, analysis, root, history, lessons)))
+    return await choose(candidates, history, stats, new)
 
 
 def _fix_remaining(analysis: FlowAnalysis, root: Path, last: ValidationAttempt) -> Optional[ChainFix]:
@@ -183,6 +266,7 @@ def _fix_remaining(analysis: FlowAnalysis, root: Path, last: ValidationAttempt) 
         remaining_paths=[],
         tests=last.fix.tests,
         origin="template",
+        strategy_id=template_id(last.remaining_signatures[0]["kind"]) if last.remaining_signatures else "",
     )
 
 
@@ -232,10 +316,14 @@ You are a senior application security engineer fixing a chain of weaknesses.
 ## Previous attempts and why they failed
 {history}
 
+## Lessons from validated fixes of similar problems (other code; do not copy, adapt the approach)
+{lessons}
+
 Propose the smallest change to the code shown that enforces this security property: {prop}.
 Earlier attempts' changes are already in that code; only add what is still missing or wrong.
 Interrupt the chain where it is reliable (prefer the sensitive operation so every path is covered).
 Do not modify unrelated code. Your fix must differ from every previous attempt and address the failure evidence.
+Avoid approaches that the lessons show failing; prefer ones that passed, applied to this code.
 
 Use APIs that exist in current library versions (e.g. escape comes from markupsafe, not flask).
 
@@ -252,7 +340,7 @@ Respond with JSON only, replacing every <...> placeholder:
 
 
 async def ai_fix(
-    chain: WeaknessChain, analysis: FlowAnalysis, root: Path, history: list[ValidationAttempt],
+    chain: WeaknessChain, analysis: FlowAnalysis, root: Path, history: list[ValidationAttempt], lessons: str = "",
 ) -> Optional[ChainFix]:
     from services import ai_enhancer
     from utils.config import settings
@@ -263,7 +351,7 @@ async def ai_fix(
 
     prompt = AI_FIX_PROMPT.format(
         chain=_describe(chain), code=_code_context(chain, analysis, root),
-        history=_describe_history(history) or "(none)", prop=PROPERTY[chain.kind],
+        history=_describe_history(history) or "(none)", prop=PROPERTY[chain.kind], lessons=lessons or "(none)",
     )
     try:
         async with httpx.AsyncClient(timeout=90) as http:
@@ -290,6 +378,7 @@ async def ai_fix(
         remaining_paths=[str(p) for p in data.get("remaining_paths") or []][:10],
         tests=planned_checks(chain),
         origin="ai",
+        strategy_id="ai",
     )
 
 
@@ -332,10 +421,11 @@ def _code_context(chain: WeaknessChain, analysis: FlowAnalysis, root: Path) -> s
     return "\n".join(chunks)
 
 
-def _describe_history(history: list[ValidationAttempt]) -> str:
+def _describe_history(history: list[ValidationAttempt], limit: int = 8) -> str:
     out = []
-    for a in history:
-        out.append(f"Attempt {a.attempt} ({a.fix.origin}): {a.fix.strategy} -> {a.status.value}: {a.summary}")
+    for a in history[-limit:]:  # resumed investigations can carry many attempts; the latest matter most
+        out.append(f"Attempt {a.attempt} ({a.fix.strategy_id or a.fix.origin}): {a.fix.strategy} -> "
+                   f"{a.status.value}: {a.summary}")
         for e in a.fix.edits:
             out.append(f"  edit {e.file}:{e.start_line}-{e.end_line}: {e.replacement[:300]!r}")
         for c in a.checks:

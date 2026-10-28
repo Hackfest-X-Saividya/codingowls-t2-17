@@ -22,6 +22,16 @@ class Settings:
     # for per-attempt success rates before raising this.
     FIX_ATTEMPTS_CAP: int = 5
     FIX_MAX_ATTEMPTS: int = min(max(int(os.getenv("FIX_MAX_ATTEMPTS", "3")), 1), 5)
+    # Validation history (every fix attempt) lives in MongoDB; see services/validation_history.py
+    MONGODB_URI: str = os.getenv("MONGODB_URI", "")
+    MONGODB_DATABASE: str = os.getenv("MONGODB_DATABASE", "security_scanner")
+    MONGODB_TIMEOUT_MS: int = int(os.getenv("MONGODB_TIMEOUT_MS", "5000"))
+    # A predefined fix strategy that failed this often in comparable cases (same rule or vulnerability
+    # class) and never passed is tried after the LLM instead of first; it stays the fallback
+    HISTORY_AVOID_AFTER_FAILURES: int = max(int(os.getenv("HISTORY_AVOID_AFTER_FAILURES", "2")), 1)
+    # Attempts per investigation (all Validate Fix runs on one problem, see validation_history.py);
+    # once used up, the developer reviews the history or explicitly starts a new investigation
+    INVESTIGATION_MAX_ATTEMPTS: int = max(int(os.getenv("INVESTIGATION_MAX_ATTEMPTS", "10")), 1)
     # Opt-in: project test command run in the sandbox copy (e.g. "python -m pytest -q").
     # Off by default because it executes the scanned repository's code on this host.
     VALIDATION_TEST_COMMAND: str = os.getenv("VALIDATION_TEST_COMMAND", "")

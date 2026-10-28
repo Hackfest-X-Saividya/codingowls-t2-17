@@ -218,7 +218,7 @@ def test_retry_uses_failure_evidence(make_repo, tmp_path):
 
 def _cosmetic_fixes(monkeypatch, suggested: list):
     """Every suggestion is new but changes nothing that matters."""
-    async def useless_fix(chain, analysis, root_, history, use_ai):
+    async def useless_fix(chain, analysis, root_, history, use_ai, **_):
         n = len(history) + 1
         line = (root_ / "app.py").read_text(encoding="utf-8").split("\n")[0]
         fix = ChainFix(strategy=f"cosmetic {n}", break_point=chain.direct_weaknesses[0], origin="template",

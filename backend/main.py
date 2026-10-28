@@ -1,15 +1,19 @@
+import asyncio
 import logging
 import shutil
 import subprocess
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from routers.chains import router as chains_router
 from routers.scan import router as scan_router
+from services import validation_history
 
 logging.basicConfig(
     level=logging.INFO,
@@ -18,13 +22,33 @@ logging.basicConfig(
 
 limiter = Limiter(key_func=get_remote_address)
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    # Connect now, so attempts a previous process left RUNNING are marked ERROR before new ones start.
+    # Without MongoDB the scanner still works; fix validation answers 503 with setup instructions.
+    try:
+        await asyncio.to_thread(validation_history.connect)
+    except validation_history.HistoryUnavailable as e:
+        logging.getLogger(__name__).error("Fix validation is unavailable: %s", e)
+    yield
+
+
 app = FastAPI(
     title="AI Security Scanner",
     description="Automated security analysis with AI-enhanced vulnerability reports",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
+
+
+@app.exception_handler(validation_history.HistoryUnavailable)
+async def history_unavailable(_: Request, exc: validation_history.HistoryUnavailable) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
@@ -41,8 +65,6 @@ app.include_router(chains_router)
 
 @app.get("/health")
 async def health_check() -> dict[str, object]:
-    import asyncio
-
     semgrep_path = shutil.which("semgrep")
 
     # Get semgrep version

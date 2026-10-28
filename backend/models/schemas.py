@@ -173,6 +173,10 @@ class ChainFix(BaseModel):
     remaining_paths: list[str] = []  # paths this fix does not cover
     tests: list[str] = []            # checks that verify it
     origin: str = "template"         # template | ai | developer
+    # Which strategy produced it: a predefined one ("template:sql_injection", "template:secret-env",
+    # "template:dependency-upgrade", "scan-suggestion"), "ai" or "developer". History is kept per strategy.
+    strategy_id: str = ""
+    history_note: str = ""           # how past outcomes influenced choosing it, if they did
 
 
 class WeaknessChain(BaseModel):
@@ -212,6 +216,19 @@ class ValidationCheck(BaseModel):
     status: str  # passed | failed | error | skipped
     detail: str = ""
     evidence: list[Evidence] = []
+    # The check could not run for a reason outside the code (scanner, OSV.dev, test runner):
+    # says nothing about the fix, so it is reported as ERROR rather than INCONCLUSIVE
+    infrastructure: bool = False
+
+
+class AttemptStatus(str, Enum):
+    """Status of one persisted attempt; coarser than ValidationStatus and adds RUNNING / ERROR."""
+    RUNNING = "RUNNING"
+    PASSED = "PASSED"
+    FAILED = "FAILED"              # the fix was evaluated and does not hold (incl. new vulnerability)
+    INCONCLUSIVE = "INCONCLUSIVE"  # evaluated, but the evidence does not decide (patch stale, conflicting)
+    ERROR = "ERROR"                # infrastructure problem or crash: nothing is known about the fix
+    SKIPPED = "SKIPPED"            # the fix produced code an earlier attempt already validated; not run again
 
 
 class NewIssue(BaseModel):
@@ -244,6 +261,9 @@ class ValidationAttempt(BaseModel):
     # None when the attempt could not be evaluated. Used to stop early when progress stalls.
     progress_score: Optional[int] = None
     improved: Optional[bool] = None  # better than every earlier attempt
+    # SHA-256 of the code snapshot that was validated (the unpatched code if the patch did not apply)
+    code_hash: Optional[str] = None
+    record_status: Optional[AttemptStatus] = None
 
 
 class FixValidation(BaseModel):
@@ -251,12 +271,15 @@ class FixValidation(BaseModel):
     scan_id: str
     chain_id: Optional[str] = None    # set when the chain checks were used
     finding_id: Optional[str] = None  # set when started from a finding
+    investigation_id: Optional[str] = None  # persisted attempt history this run belongs to
+    first_attempt: int = 1                  # attempt number of this run's first attempt in the investigation
     state: str = "running"  # running | complete | failed
     status: Optional[ValidationStatus] = None
+    result: Optional[AttemptStatus] = None  # RUNNING while running, then the last attempt's (ERROR on a crash)
     message: str = ""
     max_attempts: int = 3
     attempts: list[ValidationAttempt] = []
-    # passed | stalled | limit | inconclusive | no_fix | not_reproducible
+    # passed | stalled | limit | inconclusive | no_fix | not_reproducible | duplicate
     stop_reason: Optional[str] = None
     best_attempt: Optional[int] = None
     final_fix: Optional[ChainFix] = None  # final code (edits against the original): passing, else best
@@ -270,6 +293,54 @@ class ValidationRequest(BaseModel):
     # Omit edits to validate the suggested fix; pass edits to validate a developer's own fix
     edits: Optional[list[FixEdit]] = None
     max_attempts: Optional[int] = Field(None, ge=1, le=5)
+    # Close the current investigation (e.g. at its attempt limit) and start a new one
+    new_investigation: bool = False
+
+
+class AttemptRecord(BaseModel):
+    """One persisted validation attempt (services/validation_history.py)."""
+    attempt_id: str
+    investigation_id: str
+    validation_id: str
+    attempt_number: int
+    parent_attempt_id: Optional[str] = None
+    code_hash: Optional[str] = None
+    finding_id: Optional[str] = None
+    chain_id: Optional[str] = None
+    rule_id: Optional[str] = None
+    vuln_class: Optional[str] = None
+    phase: Optional[str] = None  # how far it got: generating | applying | validating
+    status: AttemptStatus
+    outcome: Optional[ValidationStatus] = None  # the detailed validation outcome, when one was reached
+    failure_reason: Optional[str] = None
+    strategy: str = ""
+    strategy_id: str = ""
+    selection_note: str = ""  # how history influenced the choice of this attempt's strategy
+    fix_origin: str = ""
+    patch: list[FixEdit] = []
+    diff: str = ""
+    checks: list[ValidationCheck] = []
+    created_at: str
+    finished_at: Optional[str] = None
+
+
+class Investigation(BaseModel):
+    """Every attempt to fix one problem (a finding or chain of one scan), across Validate Fix runs."""
+    investigation_id: str
+    scan_id: str
+    target_key: str
+    finding_id: Optional[str] = None
+    chain_id: Optional[str] = None
+    rule_id: Optional[str] = None
+    vuln_class: Optional[str] = None
+    file: Optional[str] = None
+    status: str  # open | passed | exhausted | closed (only an explicit new investigation closes one)
+    max_attempts: int
+    active_validation_id: Optional[str] = None
+    best_attempt: Optional[int] = None  # attempt whose code the next run resumes from
+    created_at: str
+    updated_at: str
+    attempts: list[AttemptRecord] = []
 
 
 class ScanSummary(BaseModel):

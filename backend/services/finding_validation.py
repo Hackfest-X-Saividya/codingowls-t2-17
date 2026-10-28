@@ -41,6 +41,9 @@ from utils import sandbox
 
 logger = logging.getLogger(__name__)
 
+# Predefined strategies for single findings (fix_planner.choose keeps their record)
+DEPENDENCY_UPGRADE, SECRET_ENV, SCAN_SUGGESTION = "template:dependency-upgrade", "template:secret-env", "scan-suggestion"
+
 PLACEHOLDER_FIX = re.compile(r"AI enhancement unavailable|set GROQ_API_KEY", re.I)
 JS_EXT = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
 
@@ -59,8 +62,12 @@ You are a senior application security engineer fixing one vulnerability.
 ## Previous attempts and why they failed
 {history}
 
+## Lessons from validated fixes of similar problems (other code; do not copy, adapt the approach)
+{lessons}
+
 Propose the smallest change to {file} that removes this vulnerability without changing what the code does.
 Earlier attempts' changes are already in the code; only add what is still missing or wrong.
+Your fix must differ from every previous attempt. Avoid approaches that the lessons show failing.
 Use APIs that exist in current library versions.{extra}
 
 Respond with JSON only, replacing every <...> placeholder:
@@ -81,6 +88,8 @@ class FindingTarget:
     use_ai: bool = False
     developer_fix: Optional[ChainFix] = None
     all_findings: list[Vulnerability] = field(default_factory=list)
+    lessons: str = ""  # outcomes of similar fixes elsewhere (validation_history.lessons), for the LLM
+    strategy_stats: dict = field(default_factory=dict)  # per-strategy record in comparable cases (fix_planner.choose)
     _before: Optional[tuple[list[Vulnerability], Optional[str]]] = None
 
     # ---------- Target protocol ----------
@@ -94,25 +103,30 @@ class FindingTarget:
         if self.developer_fix:
             return self.developer_fix
         f = self.finding
+        value = fix_planner._value
         if f.category == FindingCategory.DEPENDENCY:
-            return dependency_fix(f, self.root, f.fixed_version)
-        fix = secret_fix(f, self.root) if f.category == FindingCategory.SECRET else snippet_fix(f, self.root)
-        if fix is None and self.use_ai:
-            fix = await self._ai_fix(self.root, [])
-        return fix
+            candidates = [(DEPENDENCY_UPGRADE, lambda: value(dependency_fix(f, self.root, f.fixed_version)))]
+        elif f.category == FindingCategory.SECRET:
+            candidates = [(SECRET_ENV, lambda: value(secret_fix(f, self.root)))]
+        else:
+            candidates = [(SCAN_SUGGESTION, lambda: value(snippet_fix(f, self.root)))]
+        if self.use_ai and f.category != FindingCategory.DEPENDENCY:
+            candidates.append(("ai", lambda: self._ai_fix(self.root, [])))
+        return await fix_planner.choose(candidates, [], self.strategy_stats, lambda fix: bool(fix and fix.edits))
 
     async def next_fix(self, current: Path, history: list[ValidationAttempt]) -> Optional[ChainFix]:
         tried = {fix_planner._edits_key(a.fix.edits) for a in history}
-        fix: Optional[ChainFix] = None
+        candidates: list[fix_planner.Candidate] = []
         if self.finding.category == FindingCategory.DEPENDENCY:
             versions = [s["fixed_version"] for s in history[-1].remaining_signatures if s.get("fixed_version")]
             if versions:
-                fix = dependency_fix(self.finding, current, max(versions, key=_vtuple))
+                version = max(versions, key=_vtuple)
+                candidates.append((DEPENDENCY_UPGRADE,
+                                   lambda: fix_planner._value(dependency_fix(self.finding, current, version))))
         elif self.use_ai:
-            fix = await self._ai_fix(current, history)
-        if fix and fix.edits and fix_planner._edits_key(fix.edits) not in tried:
-            return fix
-        return None
+            candidates.append(("ai", lambda: self._ai_fix(current, history)))
+        return await fix_planner.choose(candidates, history, self.strategy_stats,
+                                        lambda fix: bool(fix and fix.edits and fix_planner._edits_key(fix.edits) not in tried))
 
     async def evaluate(self, fix: ChainFix, attempt_no: int, patched: Path, changed: list[str]) -> ValidationAttempt:
         f = self.finding
@@ -151,14 +165,15 @@ class FindingTarget:
     async def _recheck_code(self, patched: Path, changed_lines: set[int], attempt: ValidationAttempt) -> None:
         f = self.finding
         if self.scanner is None:
-            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error",
+            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error", infrastructure=True,
                                                   detail="The security scanner is not available."))
             return
         if self._before is None:
             self._before = await self.scanner(self.root, [f.file], self.languages)
         (before, err_a), (after, err_b) = self._before, await self.scanner(patched, [f.file], self.languages)
         if err_a or err_b:
-            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error", detail=err_a or err_b or ""))
+            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error", infrastructure=True,
+                                                  detail=err_a or err_b or ""))
             return
         if not any(v.rule_id == f.rule_id for v in before):
             attempt.checks.append(ValidationCheck(
@@ -211,7 +226,7 @@ class FindingTarget:
         f = self.finding
         findings, warnings = await dependency_scanner.scan_dependencies(patched)
         if any("could not reach OSV" in w for w in warnings):
-            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error",
+            attempt.checks.append(ValidationCheck(name="reproduce_original", status="error", infrastructure=True,
                                                   detail="The vulnerability database (OSV.dev) could not be reached."))
             return
         pkg = (f.package or "").lower()
@@ -254,7 +269,7 @@ class FindingTarget:
         prompt = FINDING_FIX_PROMPT.format(
             title=f.title, rule_id=f.rule_id, category=f.category.value, file=f.file, line=center,
             explanation=(f.ai_explanation or "")[:800], code=code,
-            history=fix_planner._describe_history(history) or "(none)",
+            history=fix_planner._describe_history(history) or "(none)", lessons=self.lessons or "(none)",
             extra=(" Replace the hardcoded secret with a value read from an environment variable."
                    if f.category == FindingCategory.SECRET else ""),
         )
@@ -273,7 +288,8 @@ class FindingTarget:
         if not edits:
             return None
         return ChainFix(strategy=str(data.get("strategy", "AI-suggested fix"))[:200], break_point=f.id,
-                        target_nodes=[f.id], rationale=str(data.get("rationale", ""))[:1500], edits=edits, origin="ai")
+                        target_nodes=[f.id], rationale=str(data.get("rationale", ""))[:1500], edits=edits, origin="ai",
+                        strategy_id="ai")
 
 
 # ---------- first fixes ----------
@@ -302,7 +318,7 @@ def snippet_fix(f: Vulnerability, root: Path) -> Optional[ChainFix]:
     return ChainFix(strategy="Apply the suggested fix to the flagged code", break_point=f.id, target_nodes=[f.id],
                     rationale="The scan's suggested fix, placed on the lines it was written for.",
                     edits=[FixEdit(file=f.file, start_line=start, end_line=end, original=original, replacement=replacement)],
-                    origin="ai")
+                    origin="ai", strategy_id=SCAN_SUGGESTION)
 
 
 def dependency_fix(f: Vulnerability, root: Path, version: Optional[str]) -> Optional[ChainFix]:
@@ -330,7 +346,7 @@ def dependency_fix(f: Vulnerability, root: Path, version: Optional[str]) -> Opti
                 rationale=f"{new_version} is the first version not affected by {f.rule_id}.",
                 edits=[FixEdit(file=f.file, start_line=i, end_line=i, original=line,
                                replacement=f"{m.group(1)}{new_version}{m.group(3)}")],
-                origin="template")
+                origin="template", strategy_id=DEPENDENCY_UPGRADE)
     return None
 
 
@@ -361,7 +377,7 @@ def secret_fix(f: Vulnerability, root: Path) -> Optional[ChainFix]:
     return ChainFix(strategy=f"Read {m['name']} from the {env} environment variable", break_point=f.id,
                     target_nodes=[f.id],
                     rationale="Keeps the credential out of the code. It was already exposed, so rotate it as well.",
-                    edits=edits, origin="template")
+                    edits=edits, origin="template", strategy_id=SECRET_ENV)
 
 
 # ---------- checks ----------

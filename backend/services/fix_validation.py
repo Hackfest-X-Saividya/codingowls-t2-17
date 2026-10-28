@@ -44,7 +44,7 @@ from pathlib import Path
 from typing import Awaitable, Callable, Optional, Protocol
 
 from models.schemas import (
-    ChainFix, Evidence, EvidenceKind, FixEdit, NewIssue, ValidationAttempt, ValidationCheck, ValidationStatus,
+    AttemptStatus, ChainFix, Evidence, EvidenceKind, FixEdit, NewIssue, ValidationAttempt, ValidationCheck, ValidationStatus,
     Vulnerability, WeaknessChain,
 )
 from services import chain_analysis, fix_planner
@@ -80,6 +80,7 @@ class LoopResult:
     best_attempt: Optional[int] = None   # attempt number of the passing / most-improved fix
     final_fix: Optional[ChainFix] = None  # final code, as edits against the original
     final_diff: str = ""
+    result: Optional[AttemptStatus] = None  # the last evaluated attempt's status, else why nothing was evaluated
 
 
 class Target(Protocol):
@@ -90,6 +91,48 @@ class Target(Protocol):
     async def first_fix(self) -> Optional[ChainFix]: ...
     async def next_fix(self, current: Path, history: list[ValidationAttempt]) -> Optional[ChainFix]: ...
     async def evaluate(self, fix: ChainFix, attempt_no: int, patched: Path, changed: list[str]) -> ValidationAttempt: ...
+
+
+@dataclass
+class Resume:
+    """Where earlier runs of the same investigation left off."""
+    history: list[ValidationAttempt]          # every earlier evaluated attempt, oldest first
+    best_fix: Optional[ChainFix] = None       # best code so far, as edits against the original
+    best: Optional[ValidationAttempt] = None  # the attempt that produced it
+
+
+class Journal(Protocol):
+    """Persists every attempt as the loop runs (services/validation_history.py). Calls block (database I/O)."""
+
+    def begin(self, attempt_no: int) -> None:
+        """Record the attempt as RUNNING, before its fix is generated."""
+    def generated(self, fix: ChainFix) -> None:
+        """Record the generated fix (patch)."""
+    def hashed(self, code_hash: str) -> Optional[str]:
+        """Record the snapshot to validate; returns the earlier attempt that already validated this exact code, if any."""
+    def close(self, status: AttemptStatus, reason: str) -> None:
+        """End the attempt without evaluating it (no fix could be generated, or SKIPPED as already validated)."""
+    def finish(self, attempt: ValidationAttempt) -> None:
+        """Record the evaluated attempt's results."""
+
+
+async def _log(journal: Optional[Journal], method: str, *args) -> Optional[str]:
+    return await asyncio.to_thread(getattr(journal, method), *args) if journal else None
+
+
+def record_status(a: ValidationAttempt) -> AttemptStatus:
+    """PASSED / FAILED / INCONCLUSIVE / ERROR for an evaluated attempt.
+
+    INCONCLUSIVE becomes ERROR when a check could not run for infrastructure reasons
+    (scanner, OSV.dev, test runner): that says nothing about the fix itself.
+    """
+    if a.status == ValidationStatus.PASS:
+        return AttemptStatus.PASSED
+    if a.status in (ValidationStatus.FAIL, ValidationStatus.NEW_VULNERABILITY):
+        return AttemptStatus.FAILED
+    if any(c.infrastructure and c.status in ("error", "skipped") for c in a.checks):
+        return AttemptStatus.ERROR
+    return AttemptStatus.INCONCLUSIVE
 
 
 def progress_score(a: ValidationAttempt) -> Optional[int]:
@@ -220,6 +263,9 @@ async def run_loop(
     workspace: Path,
     max_attempts: int,
     on_attempt: Optional[Callable[[ValidationAttempt], None]] = None,
+    first_attempt: int = 1,
+    resume: Optional[Resume] = None,
+    journal: Optional[Journal] = None,
 ) -> LoopResult:
     """Suggest -> apply -> verify, revising from the latest failure evidence.
 
@@ -227,43 +273,74 @@ async def run_loop(
     (the previous attempt's, whenever it improved), so the last attempt holds the
     final code. Each attempt is still verified against the original scanned code.
 
+    `resume` continues an investigation from an earlier run: its best code is the
+    starting point, its attempts are the generator's history, and attempts are
+    numbered on from `first_attempt`. `journal` persists each attempt from before
+    its fix is generated until it ends; code an earlier attempt already validated
+    is recorded as SKIPPED instead of being validated again.
+
     Stops on PASS or INCONCLUSIVE, when an attempt makes no progress over the best one
-    so far (progress_score), when no new evidence-driven fix exists, or at max_attempts
-    (capped at settings.FIX_ATTEMPTS_CAP).
+    so far (progress_score), when no new evidence-driven fix exists, when a fix only
+    reproduces code that was already validated, or at max_attempts (capped at
+    settings.FIX_ATTEMPTS_CAP).
     """
     from utils.config import settings
 
     max_attempts = min(max(max_attempts, 1), settings.FIX_ATTEMPTS_CAP)
+    last = first_attempt + max_attempts - 1
     reason = target.not_reproducible()
     if reason:
         return LoopResult(ValidationStatus.INCONCLUSIVE, [], reason, True, stop_reason="not_reproducible")
 
     original = target.root
     current, carried = original, set()  # code the next fix applies to; files changed in it
+    prior = list(resume.history) if resume else []
     attempts: list[ValidationAttempt] = []
     best: Optional[ValidationAttempt] = None
-    fix = await target.first_fix()
+    if resume and resume.best_fix and resume.best_fix.edits:
+        try:
+            touched = await asyncio.to_thread(apply_fix, original, workspace / "resumed", resume.best_fix.edits)
+            current, carried, best = workspace / "resumed", set(touched), resume.best
+        except PatchError as e:
+            logger.info("Could not restore the best code of the earlier run, starting from the original: %s", e)
+    resumed = current != original
     message, stop_reason = "", ""
-    for n in range(1, max_attempts + 1):
+    for n in range(first_attempt, last + 1):
+        await _log(journal, "begin", n)  # RUNNING before the fix is generated
+        if n > first_attempt:
+            fix = await target.next_fix(current, prior + attempts)
+        else:  # resumed: the next revision of the best code so far, from all earlier evidence
+            fix = await (target.next_fix(current, prior) if resumed else target.first_fix())
         if fix is None:
             stop_reason = "no_fix"
             message = ("No automated fix is available for this code; supply a fix to validate."
-                       if not attempts else
+                       if not attempts and not prior else
                        "No new fix could be derived from the failure evidence; manual review required.")
+            await _log(journal, "close", AttemptStatus.INCONCLUSIVE, message)
             break
+        await _log(journal, "generated", fix)
         attempt_dir = workspace / f"attempt-{n}"
         hashes_before = sandbox.tree_hashes(original)
         try:
             touched = await asyncio.to_thread(apply_fix, current, attempt_dir, fix.edits)
         except PatchError as e:
+            touched = None
             attempt = ValidationAttempt(
                 attempt=n, fix=fix, status=ValidationStatus.INCONCLUSIVE, summary=f"The fix could not be applied: {e}",
                 checks=[ValidationCheck(name="apply_patch", status="error", detail=str(e))],
                 scope="Nothing was evaluated because the patch did not apply.",
             )
-        else:
+        code_hash = await asyncio.to_thread(sandbox.code_hash, attempt_dir if touched is not None else current)
+        duplicate = await _log(journal, "hashed", code_hash)
+        if duplicate and touched is not None:
+            stop_reason = "duplicate"
+            message = f"This fix produces exactly the code already validated in {duplicate}; it was not validated again."
+            await _log(journal, "close", AttemptStatus.SKIPPED, message)
+            break
+        if touched is not None:
             attempt = await target.evaluate(fix, n, attempt_dir, sorted(carried | set(touched)))
             attempt.diff = unified_diff(current, attempt_dir, touched)  # this attempt's own change
+        attempt.code_hash = code_hash
         attempt.original_preserved = sandbox.tree_hashes(original) == hashes_before
         if not attempt.original_preserved:
             attempt.status = ValidationStatus.INCONCLUSIVE
@@ -271,11 +348,13 @@ async def run_loop(
 
         attempt.progress_score = progress_score(attempt)
         attempt.improved = made_progress(attempt, best)
+        attempt.record_status = record_status(attempt)
         if attempt.improved and attempt.progress_score < 100:
             # Keep this code: the next revision builds on it
             best, current = attempt, attempt_dir
-            carried |= set(touched)
+            carried |= set(touched or [])
         attempts.append(attempt)
+        await _log(journal, "finish", attempt)
         if on_attempt:
             on_attempt(attempt)
 
@@ -285,16 +364,15 @@ async def run_loop(
         if attempt.status == ValidationStatus.INCONCLUSIVE:
             stop_reason = "inconclusive"
             break
-        if n > 1 and not attempt.improved:
+        if n > first_attempt and not attempt.improved:
             stop_reason = "stalled"
             message = ("Stopped early: the latest revision made no progress over the best one so far. "
                        "Manual review required.")
             break
-        if n == max_attempts:
+        if n == last:
             stop_reason = "limit"
             message = "No revision passed every check. Manual review required; the best revision is kept."
             break
-        fix = await target.next_fix(current, attempts)
 
     status = attempts[-1].status if attempts else ValidationStatus.INCONCLUSIVE
     if not message:
@@ -304,9 +382,11 @@ async def run_loop(
         files = sorted(carried)
         final_fix = best.fix.model_copy(update={"edits": edits_between(original, current, files)})
         final_diff = unified_diff(original, current, files)
+    result = (attempts[-1].record_status if attempts else
+              AttemptStatus.SKIPPED if stop_reason == "duplicate" else AttemptStatus.INCONCLUSIVE)
     return LoopResult(status, attempts, message, needs_manual_review=status != ValidationStatus.PASS,
                       stop_reason=stop_reason, best_attempt=best.attempt if best else None,
-                      final_fix=final_fix, final_diff=final_diff)
+                      final_fix=final_fix, final_diff=final_diff, result=result)
 
 
 @dataclass
@@ -319,6 +399,8 @@ class ChainTarget:
     developer_fix: Optional[ChainFix] = None
     test_command: str = ""
     test_timeout: int = 300
+    lessons: str = ""  # outcomes of similar fixes elsewhere (validation_history.lessons), for the LLM
+    strategy_stats: dict = field(default_factory=dict)  # per-strategy record in comparable cases (fix_planner.choose)
 
     @property
     def root(self) -> Path:
@@ -332,11 +414,13 @@ class ChainTarget:
 
     async def first_fix(self) -> Optional[ChainFix]:
         return self.developer_fix or await fix_planner.next_fix(
-            self.chain, self.baseline.analysis, self.baseline.root, [], self.use_ai)
+            self.chain, self.baseline.analysis, self.baseline.root, [], self.use_ai, lessons=self.lessons,
+            stats=self.strategy_stats)
 
     async def next_fix(self, current: Path, history: list[ValidationAttempt]) -> Optional[ChainFix]:
         analysis = await asyncio.to_thread(analyze_repository, current)
-        return await fix_planner.next_fix(self.chain, analysis, current, history, self.use_ai)
+        return await fix_planner.next_fix(self.chain, analysis, current, history, self.use_ai, lessons=self.lessons,
+                                          stats=self.strategy_stats)
 
     async def evaluate(self, fix: ChainFix, attempt_no: int, patched: Path, changed: list[str]) -> ValidationAttempt:
         return await evaluate(self.chain, fix, attempt_no, self.baseline, patched, changed, self.scanner,
@@ -554,12 +638,14 @@ async def _scanner_check(
 ) -> None:
     targets = sorted({f for f in files if (patched / f).exists() and (baseline.root / f).exists()} | {chain.file})
     if scanner is None:
-        attempt.checks.append(ValidationCheck(name="scanner_recheck", status="skipped", detail="Scanner not available"))
+        attempt.checks.append(ValidationCheck(name="scanner_recheck", status="skipped", detail="Scanner not available",
+                                              infrastructure=True))
         return
     (before, err_a), (now, err_b) = await asyncio.gather(
         scanner(baseline.root, targets, baseline.languages), scanner(patched, targets, baseline.languages))
     if err_a or err_b:
-        attempt.checks.append(ValidationCheck(name="scanner_recheck", status="error", detail=err_a or err_b or ""))
+        attempt.checks.append(ValidationCheck(name="scanner_recheck", status="error", detail=err_a or err_b or "",
+                                              infrastructure=True))
         return
 
     def key(v: Vulnerability, root: Path) -> tuple[str, str, str]:
@@ -756,7 +842,7 @@ async def _project_tests(original: Path, patched: Path, command: str, timeout: i
     )
     shutil.rmtree(baseline_copy, ignore_errors=True)
     if rc_after in (124, 127) or (rc_before in (124, 127)):
-        attempt.checks.append(ValidationCheck(name="project_tests", status="error",
+        attempt.checks.append(ValidationCheck(name="project_tests", status="error", infrastructure=True,
                                               detail=f"Test command could not run: {out_after[-500:] or out_before[-500:]}"))
         return
     if rc_after != 0 and rc_before == 0:
@@ -852,7 +938,8 @@ def developer_fix(edits: list[FixEdit], chain: Optional[WeaknessChain], root: Pa
         filled.append(e)
     if chain is None:
         return ChainFix(strategy="Developer-supplied fix", break_point=finding_id or "", target_nodes=[finding_id or ""],
-                        rationale="Supplied by the developer for validation.", edits=filled, origin="developer")
+                        rationale="Supplied by the developer for validation.", edits=filled, origin="developer",
+                        strategy_id="developer")
     return ChainFix(strategy="Developer-supplied fix", break_point=chain.direct_weaknesses[0],
                     target_nodes=list(chain.direct_weaknesses), rationale="Supplied by the developer for validation.",
-                    edits=filled, tests=fix_planner.planned_checks(chain), origin="developer")
+                    edits=filled, tests=fix_planner.planned_checks(chain), origin="developer", strategy_id="developer")

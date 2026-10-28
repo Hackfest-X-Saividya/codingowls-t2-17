@@ -21,7 +21,8 @@ SAFE_ENV_KEYS = (
     "PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR",
     "HOME", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "LANG", "LC_ALL",
 )
-COPY_IGNORE = shutil.ignore_patterns(".git", "node_modules", "__pycache__", ".venv", "venv")
+IGNORED_DIRS = (".git", "node_modules", "__pycache__", ".venv", "venv")
+COPY_IGNORE = shutil.ignore_patterns(*IGNORED_DIRS)
 
 
 def restricted_env(**extra: str) -> dict[str, str]:
@@ -51,6 +52,22 @@ def tree_hashes(root: Path) -> dict[str, str]:
         if path.is_file() and ".git" not in path.relative_to(root).parts:
             out[path.relative_to(root).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return out
+
+
+def code_hash(root: Path) -> str:
+    """SHA-256 identifying a code snapshot: sorted relative paths and file contents.
+
+    Independent of where the tree lives and of file creation order. Skips the same
+    directories copy_tree leaves out, so a checkout and its sandbox copy hash alike.
+    """
+    h = hashlib.sha256()
+    files = [p for p in root.rglob("*")
+             if p.is_file() and not set(p.relative_to(root).parts) & set(IGNORED_DIRS)]
+    for rel, path in sorted((p.relative_to(root).as_posix(), p) for p in files):
+        # length-prefixed so (path, content) boundaries are unambiguous
+        name, data = rel.encode("utf-8"), path.read_bytes()
+        h.update(len(name).to_bytes(8, "big") + name + len(data).to_bytes(8, "big") + data)
+    return h.hexdigest()
 
 
 def run_command(cmd: list[str], cwd: Path, timeout: int) -> tuple[int, str]:

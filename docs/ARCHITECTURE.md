@@ -53,7 +53,7 @@
 | `services/repo_manager.py` | Git operations, language detection, repo size validation, cleanup |
 | `services/semgrep_runner.py` | Semgrep execution with language-specific rulesets, SARIF output |
 | `services/sarif_parser.py` | SARIF JSON parsing, severity mapping, code snippet extraction |
-| `services/ai_enhancer.py` | Parallel Claude API calls, structured prompt engineering, fallback mode |
+| `services/ai_enhancer.py` | Parallel Groq API calls (`GROQ_API_KEY`, `GROQ_MODEL`), structured prompt engineering, fallback mode |
 | `models/schemas.py` | Pydantic models for request/response validation |
 | `utils/config.py` | Environment variable management |
 
@@ -80,7 +80,7 @@
 
 **Async pipeline**: The scan runs as a background `asyncio.create_task`, so the API returns immediately and remains responsive. The frontend polls for updates.
 
-**Fallback AI**: If no Anthropic API key is configured, the scanner still functions with rule-based explanations. This ensures the tool works without paid API access.
+**Fallback AI**: If no Groq API key (`GROQ_API_KEY`) is configured, the scanner still functions with rule-based explanations. This ensures the tool works without paid API access.
 
 **Severity upgrade**: Semgrep's severity levels (error/warning/note) are mapped to our scale (critical/high/medium/low). Known dangerous patterns (SQL injection, command injection, etc.) are automatically upgraded to "critical".
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
@@ -28,7 +28,7 @@ You are a senior application security engineer. Analyze the following vulnerabil
 ```
 {vulnerable_code}
 ```
-
+{chain_context}
 Respond with a JSON object containing exactly these fields:
 {{
   "ai_explanation": "A clear, plain-English explanation of what the vulnerability is and why the code is insecure. 2-3 sentences aimed at a developer who may not be a security expert.",
@@ -48,10 +48,13 @@ Important: Return ONLY valid JSON. No markdown code fences, no extra text.
 async def enhance_vulnerabilities(
     vulnerabilities: list[Vulnerability],
     use_ai: bool = True,
+    context: Optional[dict[str, str]] = None,
 ) -> list[Vulnerability]:
     """Enhance a list of vulnerabilities with AI-generated analysis.
 
     Uses Groq (GROQ_MODEL) to generate explanations, attack scenarios, and fixes.
+    `context` maps finding ids to their attack-chain description, so the fix
+    targets the chain's break point rather than the isolated symptom.
     With use_ai=False (or no API key) only the rule-based fallback text is added.
     """
     if not vulnerabilities:
@@ -63,7 +66,7 @@ async def enhance_vulnerabilities(
 
     async with httpx.AsyncClient(timeout=90) as http:
         return await _enhance_all(
-            vulnerabilities, lambda p: _groq_complete(http, p), concurrency=4
+            vulnerabilities, lambda p: _groq_complete(http, p), concurrency=4, context=context
         )
 
 
@@ -71,6 +74,7 @@ async def _enhance_all(
     vulnerabilities: list[Vulnerability],
     complete: Callable[[str], Awaitable[str]],
     concurrency: int,
+    context: Optional[dict[str, str]] = None,
 ) -> list[Vulnerability]:
     # Bounded parallelism keeps us under provider rate limits
     semaphore = asyncio.Semaphore(concurrency)
@@ -78,7 +82,7 @@ async def _enhance_all(
     async def _safe_enhance(vuln: Vulnerability) -> Vulnerability:
         async with semaphore:
             try:
-                return await _enhance_single(complete, vuln)
+                return await _enhance_single(complete, vuln, (context or {}).get(vuln.id, ""))
             except Exception as e:
                 logger.error("AI enhancement failed for %s: %s", vuln.id, e)
                 return _apply_single_fallback(vuln)
@@ -114,7 +118,7 @@ async def _groq_complete(http: httpx.AsyncClient, prompt: str) -> str:
 
 
 async def _enhance_single(
-    complete: Callable[[str], Awaitable[str]], vuln: Vulnerability
+    complete: Callable[[str], Awaitable[str]], vuln: Vulnerability, chain_context: str = ""
 ) -> Vulnerability:
     """Enhance a single vulnerability using the given LLM completion function."""
     prompt = ENHANCEMENT_PROMPT.format(
@@ -124,6 +128,7 @@ async def _enhance_single(
         file=vuln.file,
         line=vuln.line,
         vulnerable_code=vuln.vulnerable_code or "(code snippet not available)",
+        chain_context=f"\n## Attack Chain Context\n{chain_context}\n" if chain_context else "",
     )
 
     response_text = (await complete(prompt)).strip()

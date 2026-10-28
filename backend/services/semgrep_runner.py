@@ -4,8 +4,10 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import subprocess
 from pathlib import Path
+from typing import Optional
 
 from utils.config import settings
 
@@ -46,6 +48,24 @@ RULESETS: dict[str, list[str]] = {
 DEFAULT_RULESETS = ["p/owasp-top-ten", "p/security-audit"]
 
 
+def semgrep_executable() -> str:
+    """Locate the Semgrep CLI: $SEMGREP_BIN, then PATH, then pipx's default bin dir.
+
+    pipx installs to ~/.local/bin, which often isn't on PATH (especially on Windows).
+    """
+    override = os.getenv("SEMGREP_BIN")
+    if override:
+        return override
+    found = shutil.which("semgrep")
+    if found:
+        return found
+    for name in ("semgrep.exe", "semgrep"):
+        candidate = Path.home() / ".local" / "bin" / name
+        if candidate.exists():
+            return str(candidate)
+    return "semgrep"
+
+
 def rulesets_for(languages: list[str]) -> list[str]:
     """Union of the rulesets for every detected language, in a stable order."""
     rulesets: list[str] = []
@@ -56,8 +76,10 @@ def rulesets_for(languages: list[str]) -> list[str]:
     return rulesets
 
 
-async def run_scan(repo_path: Path, languages: list[str], scan_id: str) -> Path:
-    """Run Semgrep analysis on a repository and output SARIF results.
+async def run_scan(
+    repo_path: Path, languages: list[str], scan_id: str, targets: Optional[list[Path]] = None,
+) -> Path:
+    """Run Semgrep analysis on a repository (or only `targets` inside it) and output SARIF results.
 
     Returns the path to the SARIF output file.
     """
@@ -70,28 +92,33 @@ async def run_scan(repo_path: Path, languages: list[str], scan_id: str) -> Path:
         config_args.extend(["--config", ruleset])
 
     cmd = [
-        "semgrep",
+        semgrep_executable(),
         "scan",
         *config_args,
         "--sarif",
         "--output", str(sarif_path),
         "--metrics=off",
-        str(repo_path),
+        *([str(t) for t in targets] if targets else [str(repo_path)]),
     ]
 
     logger.info("Running Semgrep: %s", " ".join(cmd))
 
     # Run in a thread: asyncio subprocesses are unsupported on Windows'
     # SelectorEventLoop (used by uvicorn --reload) and raise NotImplementedError.
-    proc = await asyncio.to_thread(
-        subprocess.run,
-        cmd,
-        capture_output=True,
-        timeout=settings.SCAN_TIMEOUT_SECONDS,
-        # Force UTF-8: on Windows Semgrep otherwise writes SARIF as cp1252
-        # and crashes on emoji in rule metadata.
-        env={**os.environ, "PYTHONUTF8": "1"},
-    )
+    try:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            timeout=settings.SCAN_TIMEOUT_SECONDS,
+            # Force UTF-8: on Windows Semgrep otherwise writes SARIF as cp1252
+            # and crashes on emoji in rule metadata.
+            env={**os.environ, "PYTHONUTF8": "1"},
+        )
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Semgrep is not installed or not on PATH. Install it with `pipx install semgrep`."
+        ) from e
 
     stdout_text = proc.stdout.decode(errors="replace").strip()
     stderr_text = proc.stderr.decode(errors="replace").strip()
@@ -141,7 +168,7 @@ async def check_semgrep_installed() -> bool:
     """Check if Semgrep CLI is installed and accessible."""
     try:
         proc = await asyncio.to_thread(
-            subprocess.run, ["semgrep", "--version"], capture_output=True
+            subprocess.run, [semgrep_executable(), "--version"], capture_output=True
         )
         version = proc.stdout.decode().strip()
         logger.info("Semgrep version: %s", version)

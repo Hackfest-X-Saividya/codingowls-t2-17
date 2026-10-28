@@ -71,6 +71,13 @@ def load(scan_id: str) -> Optional[dict[str, Any]]:
     return json.loads(row["state_json"]) if row else None
 
 
+def all_states() -> list[dict[str, Any]]:
+    """Every stored scan state (used for validation statistics)."""
+    with _lock:
+        rows = _db().execute("SELECT state_json FROM scans").fetchall()
+    return [json.loads(r["state_json"]) for r in rows]
+
+
 def recent(limit: int = 20) -> list[dict[str, Any]]:
     with _lock:
         rows = _db().execute(

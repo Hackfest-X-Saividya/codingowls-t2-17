@@ -8,6 +8,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+from routers.chains import router as chains_router
 from routers.scan import router as scan_router
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ app.add_middleware(
 )
 
 app.include_router(scan_router)
+app.include_router(chains_router)
 
 
 @app.get("/health")

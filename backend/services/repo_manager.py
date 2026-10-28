@@ -7,6 +7,7 @@ import shutil
 import stat
 from collections import Counter
 from pathlib import Path
+from typing import Optional
 
 import git
 
@@ -86,6 +87,32 @@ async def clone_repository(repo_url: str, scan_id: str) -> Path:
         )
 
     return clone_dir
+
+
+def head_commit(repo_path: Path) -> Optional[str]:
+    try:
+        return git.Repo(str(repo_path)).head.commit.hexsha
+    except Exception:
+        return None
+
+
+def clone_at_commit(repo_url: str, dest: Path, commit: Optional[str]) -> Optional[str]:
+    """Clone into dest and check out `commit` (the scanned revision). Returns the checked-out sha.
+
+    Shallow-fetches the exact commit, which GitHub allows for any reachable sha.
+    Without a commit (scans made before commits were recorded) HEAD is used.
+    """
+    if not validate_repo_url(repo_url):
+        raise ValueError(f"Invalid GitHub URL: {repo_url}")
+    dest.mkdir(parents=True, exist_ok=True)
+    try:
+        repo = git.Repo.clone_from(repo_url, str(dest), depth=1, single_branch=True)
+        if commit and repo.head.commit.hexsha != commit:
+            repo.git.fetch("--depth", "1", "origin", commit)
+            repo.git.checkout("--detach", commit)
+        return repo.head.commit.hexsha
+    except git.GitCommandError as e:
+        raise RuntimeError(f"Failed to fetch the scanned revision: {e.stderr}") from e
 
 
 def detect_languages(repo_path: Path, min_share: float = 0.05, min_files: int = 3) -> list[str]:

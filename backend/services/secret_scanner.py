@@ -89,6 +89,16 @@ def mask(value: str) -> str:
     return f"{value[:4]}{'*' * min(len(value) - 6, 20)}{value[-2:]}"
 
 
+def mask_secrets(text: str) -> str:
+    """Mask every secret the rules recognise, so code shown in the UI never contains one."""
+    for rule in RULES:
+        def repl(m: re.Match, rule: SecretRule = rule) -> str:
+            value = m.group(rule.group) if rule.group else m.group(0)
+            return m.group(0).replace(value, mask(value))
+        text = rule.pattern.sub(repl, text)
+    return text
+
+
 def _is_text_candidate(path: Path) -> bool:
     name = path.name.lower()
     if name in SKIP_FILES or any(name.endswith(ext) for ext in BINARY_EXT):

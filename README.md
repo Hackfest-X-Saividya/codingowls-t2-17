@@ -13,6 +13,8 @@ command-line version can run in CI to block risky pull requests.
 - **Static code analysis**: Semgrep rules selected per detected language, including OWASP checks
 - **Dependency check**: pinned package versions matched against the [OSV.dev](https://osv.dev) database
 - **Secret detection**: API keys, tokens, private keys and passwords committed to the repo
+- **Attack chains**: data-flow analysis connects inputs, missing checks, weak auth and findings into evidence-backed chains, prioritised by exploitability (Python)
+- **Fix validation**: chain-aware fixes are applied in a sandbox copy and re-checked for open paths, alternative paths, regressions and new issues, with bounded retries (see [docs/CHAIN_ANALYSIS.md](docs/CHAIN_ANALYSIS.md))
 - **AI explanations**: findings enriched in parallel by an LLM (`openai/gpt-oss-120b` via Groq)
 - **Live progress**: per-step progress tracker while the scan runs
 - **Exports**: SARIF 2.1.0 and PDF reports, plus scan history
@@ -24,8 +26,9 @@ command-line version can run in CI to block risky pull requests.
 
 ```
 GitHub URL ─▶ Clone (depth=1) ─▶ Detect languages ─┬─▶ Code analysis ─▶ Parse SARIF ─┐
-                                                   ├─▶ Dependency check (OSV) ───────┼─▶ AI enhance (parallel) ─▶ Report
+                                                   ├─▶ Dependency check (OSV) ───────┼─▶ Attack chains ─▶ AI enhance ─▶ Report
                                                    └─▶ Secret scan ──────────────────┘
+Report ─▶ Validate a chain's fix: sandbox copy ─▶ re-check paths, scanner, regressions ─▶ retry with evidence
 ```
 
 `POST /api/scan` returns immediately with a `scan_id`. The scan runs as a background task
@@ -49,8 +52,10 @@ ai-security-scanner/
 ├── backend/            FastAPI app, scan pipeline, CLI (cli.py), Dockerfile
 │   ├── routers/        API endpoints
 │   ├── services/       repo_manager, semgrep_runner, sarif_parser, dependency_scanner,
-│   │                   secret_scanner, ai_enhancer, sarif_export, pdf_report, scan_store
-│   └── utils/config.py environment settings
+│   │                   secret_scanner, ai_enhancer, sarif_export, pdf_report, scan_store,
+│   │                   flow_analyzer, chain_analysis, fix_planner, fix_validation
+│   ├── tests/          pytest suite with fixture apps
+│   └── utils/          config.py (environment settings), sandbox.py (validation isolation)
 ├── frontend/           Next.js app (landing page, results page, components)
 ├── ml/                 dataset preparation, baseline and UniXcoder training
 ├── vscode-extension/   VS Code extension (findings sidebar, quick fixes)
@@ -81,6 +86,10 @@ uvicorn main:app --reload --port 8000
 | `MAX_REPO_SIZE_MB` | `500` | Larger repositories are rejected |
 | `SCAN_TIMEOUT_SECONDS` | `600` | Per-scan time limit |
 | `DB_PATH` | `backend/data/scans.db` | Scan history database |
+| `FIX_MAX_ATTEMPTS` | `3` | Fix attempts per validation (max 5); the loop also stops early when progress stalls |
+| `VALIDATION_TEST_COMMAND` | (empty) | Opt-in project test command run in the sandbox, e.g. `python -m pytest -q`. Runs the scanned code on this host. |
+| `VALIDATION_TEST_TIMEOUT` | `300` | Seconds per test run |
+| `VALIDATION_KEEP_WORKSPACE` | (empty) | Set to `1` to keep sandbox copies for debugging |
 
 ### Frontend
 
@@ -99,7 +108,11 @@ Open http://localhost:3000.
 |---|---|---|
 | `POST` | `/api/scan` | Start a scan: `{"repo_url": "https://github.com/owner/repo"}` |
 | `GET` | `/api/scan/{id}/status` | Progress and current step |
-| `GET` | `/api/scan/{id}/results` | Findings and summary |
+| `GET` | `/api/scan/{id}/results` | Findings, summary, attack chains and validations |
+| `POST` | `/api/scan/{id}/findings/{finding_id}/validate` | Validate the fix for any finding (code, dependency, secret) |
+| `POST` | `/api/scan/{id}/chains/{chain_id}/validate` | Validate a chain's fix, or `{"edits": [...]}` for your own |
+| `GET` | `/api/scan/{id}/validations/{validation_id}` | Validation status, attempts and evidence |
+| `GET` | `/api/validation-stats` | Success rate per attempt, and whether a higher attempt limit would help |
 | `GET` | `/api/scan/{id}/sarif` | SARIF 2.1.0 download |
 | `GET` | `/api/scan/{id}/pdf` | PDF report download |
 | `GET` | `/api/scans` | Recent scans |
@@ -118,6 +131,20 @@ Options: `--json <file>`, `--no-ai` (skip the LLM), `--fail-on none|low|medium|h
 
 The command exits with a non-zero code when findings at or above `--fail-on` exist, so it
 can be added to any CI pipeline to block risky changes.
+
+To check a fix you made locally, compare a copy of the code before the fix with the fixed tree:
+
+```bash
+python cli.py validate ../app-before ../app-after   # PASS / FAIL / NEW_VULNERABILITY / INCONCLUSIVE per chain
+```
+
+## Tests
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest
+```
 
 ## ML model
 
@@ -139,5 +166,6 @@ the training data is the next step.
 - [docs/SETUP.md](docs/SETUP.md): detailed setup and deployment
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): system design
 - [docs/API.md](docs/API.md): API reference
+- [docs/CHAIN_ANALYSIS.md](docs/CHAIN_ANALYSIS.md): attack chains, fix validation, limitations
 - [docs/ML_MODEL_PLAN.md](docs/ML_MODEL_PLAN.md): ML detector design
 - [SYSTEM_OVERVIEW.md](SYSTEM_OVERVIEW.md): how the system is built, step by step

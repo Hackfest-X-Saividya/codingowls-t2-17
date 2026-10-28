@@ -10,6 +10,7 @@ const STEP_LABELS: Record<string, string> = {
   parse_results: "Parse results",
   scan_dependencies: "Check dependencies",
   scan_secrets: "Scan for secrets",
+  chain_analysis: "Connect attack chains",
   ai_enhance: "AI enhancement",
 };
 
@@ -20,6 +21,7 @@ const STEP_DETAILS: Record<string, string> = {
   parse_results: "Parsing SARIF output into normalized vulnerability findings.",
   scan_dependencies: "Matching pinned package versions against the OSV.dev vulnerability database.",
   scan_secrets: "Looking for hardcoded API keys, tokens, private keys and passwords.",
+  chain_analysis: "Tracing untrusted input to sensitive operations and linking the findings on each path.",
   ai_enhance: "Generating attack context and fix guidance in parallel.",
 };
 
@@ -30,6 +32,7 @@ const ALL_STEPS = [
   "parse_results",
   "scan_dependencies",
   "scan_secrets",
+  "chain_analysis",
   "ai_enhance",
 ];
 

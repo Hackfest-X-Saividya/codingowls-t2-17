@@ -15,6 +15,7 @@ import SummaryStats from "@/components/SummaryStats";
 import VulnerabilityCard from "@/components/VulnerabilityCard";
 import SeverityBadge from "@/components/SeverityBadge";
 import FindingsOverview, { type OverviewSelection } from "@/components/FindingsOverview";
+import AttackChains from "@/components/AttackChains";
 
 type SeverityFilter = "all" | "critical" | "high" | "medium" | "low";
 type CategoryFilter = "all" | FindingCategory;
@@ -160,6 +161,12 @@ export default function ResultsPage() {
             </svg>
             Back to Home
           </a>
+          <a
+            href="#attack-chains"
+            className="px-4 py-2 bg-indigo-600/20 border border-indigo-500/40 rounded-lg text-sm text-indigo-200 hover:bg-indigo-600/30 transition-colors"
+          >
+            Attack chains ({results.chains?.length ?? 0})
+          </a>
           <button
             onClick={exportPdfReport}
             disabled={exportingPdf}
@@ -209,6 +216,17 @@ export default function ResultsPage() {
           </ul>
         </div>
       )}
+
+      {/* How findings connect into exploitable chains, with fix validation */}
+      <AttackChains
+        scanId={scanId}
+        chains={results.chains ?? []}
+        validations={results.validations ?? []}
+        vulnerabilities={results.vulnerabilities}
+        chainStats={results.chain_stats ?? null}
+        languages={results.languages ?? []}
+        repoUrl={results.repo_url}
+      />
 
       {/* Category tabs */}
       <div id="findings-list" className="flex gap-1 mt-8 border-b border-slate-800 overflow-x-auto scroll-mt-4">
@@ -265,8 +283,11 @@ export default function ResultsPage() {
           filteredVulns.map((vuln) => (
             <VulnerabilityCard
               key={vuln.id}
+              scanId={scanId}
               vulnerability={vuln}
               language={results.language}
+              chains={(results.chains ?? []).filter((c) => c.finding_ids.includes(vuln.id))}
+              validations={results.validations ?? []}
             />
           ))
         )}

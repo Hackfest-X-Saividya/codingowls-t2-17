@@ -20,7 +20,9 @@ from models.schemas import (
     ScanSummary,
     STEP_LABELS,
     STEP_WEIGHTS,
+    FixValidation,
     Vulnerability,
+    WeaknessChain,
 )
 from services import pdf_report, pipeline, repo_manager, sarif_export, scan_store
 
@@ -73,6 +75,9 @@ async def initiate_scan(request: ScanRequest) -> ScanResponse:
         "languages": [],
         "vulnerabilities": [],
         "warnings": [],
+        "chains": [],
+        "validations": {},
+        "commit": None,
         "error": None,
     }
 
@@ -139,6 +144,11 @@ async def get_scan_results(scan_id: str) -> ScanResultsResponse:
         summary=_compute_summary(vulns),
         vulnerabilities=vulns,
         warnings=scan.get("warnings", []),
+        chains=[c if isinstance(c, WeaknessChain) else WeaknessChain.model_validate(c)
+                for c in scan.get("chains", [])],
+        validations=[v if isinstance(v, FixValidation) else FixValidation.model_validate(v)
+                     for v in (scan.get("validations") or {}).values()],
+        chain_stats=scan.get("chain_stats"),
     )
 
 
@@ -236,6 +246,8 @@ async def _run_scan(scan_id: str, repo_url: str) -> None:
     try:
         on_step(ScanStep.CLONE_REPO, False)
         repo_path = await repo_manager.clone_repository(repo_url, scan_id)
+        # Fix validation re-clones exactly this revision, since the checkout is deleted below
+        scans[scan_id]["commit"] = repo_manager.head_commit(repo_path)
         on_step(ScanStep.CLONE_REPO, True)
 
         result = await pipeline.analyze(repo_path, scan_id, on_step=on_step)
@@ -244,6 +256,8 @@ async def _run_scan(scan_id: str, repo_url: str) -> None:
         scans[scan_id]["language"] = ", ".join(result.languages) or "unknown"
         scans[scan_id]["warnings"] = result.warnings
         scans[scan_id]["vulnerabilities"] = result.findings
+        scans[scan_id]["chains"] = result.chains
+        scans[scan_id]["chain_stats"] = result.chain_stats
         scans[scan_id]["status"] = ScanStatus.COMPLETE
         scans[scan_id]["progress"] = 100
         scans[scan_id]["current_step"] = "Scan complete"

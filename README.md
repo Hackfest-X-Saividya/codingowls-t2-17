@@ -17,6 +17,7 @@ command-line version can run in CI to block risky pull requests.
 - **Live progress**: per-step progress tracker while the scan runs
 - **Exports**: SARIF 2.1.0 and PDF reports, plus scan history
 - **CLI**: scan a local folder and fail the build at a chosen severity
+- **VS Code extension**: findings sidebar, squiggles and one-click fixes inside the editor (see [vscode-extension/](vscode-extension/README.md))
 - **ML detector (in progress)**: our own fine-tuned UniXcoder model for vulnerable functions (see [ml/](ml/README.md))
 
 ## How it works
@@ -52,6 +53,7 @@ ai-security-scanner/
 │   └── utils/config.py environment settings
 ├── frontend/           Next.js app (landing page, results page, components)
 ├── ml/                 dataset preparation, baseline and UniXcoder training
+├── vscode-extension/   VS Code extension (findings sidebar, quick fixes)
 └── docs/               API, architecture, setup and ML plan
 ```
 

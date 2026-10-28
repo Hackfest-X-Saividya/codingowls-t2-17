@@ -206,6 +206,9 @@ def _fixed_version(vuln: dict, dep: Dependency) -> str | None:
         if pkg.get("name", "").lower() != dep.name.lower() or pkg.get("ecosystem") != dep.ecosystem:
             continue
         for rng in affected.get("ranges", []):
+            # GIT ranges hold commit hashes, which are not installable versions
+            if rng.get("type") == "GIT":
+                continue
             fixes += [e["fixed"] for e in rng.get("events", []) if "fixed" in e]
     try:
         above = [f for f in fixes if _vtuple(f) > _vtuple(dep.version)]

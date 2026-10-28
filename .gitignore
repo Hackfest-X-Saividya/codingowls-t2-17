@@ -24,19 +24,34 @@ htmlcov/
 node_modules/
 .next/
 out/
+coverage/
 *.tsbuildinfo
+.eslintcache
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+
+# VS Code extension (vscode-extension/): bundle, compiled tests, packages, test VS Code download
+vscode-extension/dist/
+vscode-extension/out/
+*.vsix
+.vscode-test/
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
+# Editor temp files
+*.swp
+*~
+
 # IDE
 .vscode/
 .idea/
+# ...except the extension's own F5 launch/build config
+!vscode-extension/.vscode/
 
 # ML datasets, processed data and trained models (large)
 datasets/

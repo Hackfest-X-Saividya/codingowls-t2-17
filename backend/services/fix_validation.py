@@ -313,7 +313,8 @@ async def run_loop(
             fix = await (target.next_fix(current, prior) if resumed else target.first_fix())
         if fix is None:
             stop_reason = "no_fix"
-            message = ("No automated fix is available for this code; supply a fix to validate."
+            specific = getattr(target, "no_fix_message", lambda: None)()
+            message = ((specific or "No automated fix is available for this code; supply a fix to validate.")
                        if not attempts and not prior else
                        "No new fix could be derived from the failure evidence; manual review required.")
             await _log(journal, "close", AttemptStatus.INCONCLUSIVE, message)

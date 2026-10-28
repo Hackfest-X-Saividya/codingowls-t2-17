@@ -1,8 +1,10 @@
 FROM python:3.12-slim
 
-# System deps: git (for gitpython), pipx deps
+# System deps: git (for gitpython); npm regenerates package-lock.json when validating npm dependency fixes
 RUN apt-get update && apt-get install -y \
     git \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Semgrep in an isolated environment via pipx to avoid

@@ -19,13 +19,13 @@ import type { FindingCategory, Vulnerability } from "@/lib/api";
 const SEVERITIES = ["critical", "high", "medium", "low"] as const;
 type Severity = (typeof SEVERITIES)[number];
 
-// Severity is ordered, so it gets one ordinal ramp (darker = more severe).
-// Validated with the dataviz validator (--ordinal, light, white surface): all checks pass.
+// Severity is ordered, so it gets one ordinal ramp (lighter = more severe on the dark surface).
+// Validated with the dataviz validator (--ordinal, dark, slate-900 surface): all checks pass.
 const SEVERITY_FILL: Record<Severity, string> = {
-  critical: "#0d366b",
-  high: "#1c5cab",
+  critical: "#cfe2fb",
+  high: "#86b6ef",
   medium: "#3987e5",
-  low: "#86b6ef",
+  low: "#2a69ba",
 };
 
 const SEVERITY_LABEL: Record<Severity, string> = {
@@ -42,12 +42,12 @@ const TYPES: { key: FindingCategory; label: string }[] = [
 ];
 
 // Chart chrome (text tokens / neutrals; colour only ever encodes severity)
-const INK = "#0b0b0b";
-const INK_2 = "#52514e";
-const MUTED = "#898781";
-const NEUTRAL_NODE = "#52514e";
-const NEUTRAL_EDGE = "#c3c2b7";
-const SURFACE = "#ffffff";
+const INK = "#f1f5f9";
+const INK_2 = "#cbd5e1";
+const MUTED = "#94a3b8";
+const NEUTRAL_NODE = "#64748b";
+const NEUTRAL_EDGE = "#475569";
+const SURFACE = "#0f172a";
 
 const MAX_HIDDEN = 8;
 const OTHER = "__other__";
@@ -128,12 +128,12 @@ function SeverityLegend() {
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Severity legend">
       {SEVERITIES.map((s) => (
-        <li key={s} className="flex items-center gap-1.5 text-xs text-gray-600">
+        <li key={s} className="flex items-center gap-1.5 text-xs text-slate-400">
           <span className="w-2.5 h-2.5 rounded-full" style={{ background: SEVERITY_FILL[s] }} aria-hidden="true" />
           {SEVERITY_LABEL[s]}
         </li>
       ))}
-      <li className="flex items-center gap-1.5 text-xs text-gray-600">
+      <li className="flex items-center gap-1.5 text-xs text-slate-400">
         <span className="inline-block w-5 h-[3px] rounded" style={{ background: NEUTRAL_EDGE }} aria-hidden="true" />
         thicker = more findings
       </li>
@@ -153,12 +153,12 @@ function TableView({ locations, triples }: { locations: LocInfo[]; triples: Trip
   ];
   return (
     <details className="mt-3">
-      <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 select-none">View as table</summary>
+      <summary className="text-xs text-slate-400 cursor-pointer hover:text-slate-300 select-none">View as table</summary>
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-xs tabular-nums">
           <caption className="sr-only">Findings by type and by location, split by severity</caption>
           <thead>
-            <tr className="text-gray-500 border-b border-gray-200">
+            <tr className="text-slate-400 border-b border-slate-800">
               <th scope="col" className="text-left font-medium py-1 pr-2">Group</th>
               <th scope="col" className="text-left font-medium py-1 pr-2">Name</th>
               {SEVERITIES.map((s) => (
@@ -169,15 +169,15 @@ function TableView({ locations, triples }: { locations: LocInfo[]; triples: Trip
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={`${r.group}-${r.key}`} className="border-b border-gray-100 text-gray-700">
-                <td className="py-1 pr-2 text-gray-500">{r.group}</td>
+              <tr key={`${r.group}-${r.key}`} className="border-b border-slate-800 text-slate-300">
+                <td className="py-1 pr-2 text-slate-400">{r.group}</td>
                 <th scope="row" className="text-left font-normal py-1 pr-2 max-w-[18rem] truncate" title={r.label}>
                   {r.label}
                 </th>
                 {SEVERITIES.map((s) => (
                   <td key={s} className="text-right py-1 px-2">{r.counts[s]}</td>
                 ))}
-                <td className="text-right py-1 pl-2 font-medium text-gray-900">{r.total}</td>
+                <td className="text-right py-1 pl-2 font-medium text-slate-100">{r.total}</td>
               </tr>
             ))}
           </tbody>
@@ -462,15 +462,15 @@ export default function FindingsOverview({
   return (
     <section
       ref={containerRef}
-      className="relative mt-6 bg-white border border-gray-200 rounded-xl p-5"
+      className="relative mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5"
       aria-labelledby="findings-overview-title"
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 mb-2">
         <div>
-          <h2 id="findings-overview-title" className="text-base font-semibold text-gray-900">
+          <h2 id="findings-overview-title" className="text-base font-semibold text-slate-100">
             How findings relate
           </h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p className="text-xs text-slate-400 mt-0.5">
             Each finding flows from its type, through the file or package it lives in, to its severity. Hover a
             node to trace its findings; click to filter the list.
           </p>
@@ -540,23 +540,23 @@ export default function FindingsOverview({
       {tooltip && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute z-10 w-64 -translate-x-1/2 -translate-y-full rounded-lg border border-gray-200 bg-white px-3 py-2 shadow-lg"
+          className="pointer-events-none absolute z-10 w-64 -translate-x-1/2 -translate-y-full rounded-lg border border-slate-800 bg-slate-900 px-3 py-2 shadow-lg"
           style={{ left: tooltip.x, top: tooltip.y - 10 }}
         >
-          <p className="text-xs font-medium text-gray-900 break-all">{tooltip.title}</p>
-          {tooltip.subtitle && <p className="text-[11px] text-gray-500 break-all">{tooltip.subtitle}</p>}
+          <p className="text-xs font-medium text-slate-100 break-all">{tooltip.title}</p>
+          {tooltip.subtitle && <p className="text-[11px] text-slate-400 break-all">{tooltip.subtitle}</p>}
           <ul className="mt-1.5 space-y-0.5">
             {tooltip.rows.map((r) => (
-              <li key={r.label} className="flex items-center gap-2 text-xs text-gray-600">
+              <li key={r.label} className="flex items-center gap-2 text-xs text-slate-400">
                 {r.swatch && <span className="w-2 h-2 rounded-full" style={{ background: r.swatch }} aria-hidden="true" />}
                 <span className="flex-1">{r.label}</span>
-                <span className="tabular-nums text-gray-900">{r.value}</span>
+                <span className="tabular-nums text-slate-100">{r.value}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-1 pt-1 border-t border-gray-100 flex text-xs text-gray-600">
+          <p className="mt-1 pt-1 border-t border-slate-800 flex text-xs text-slate-400">
             <span className="flex-1">Total</span>
-            <span className="tabular-nums font-medium text-gray-900">{tooltip.total}</span>
+            <span className="tabular-nums font-medium text-slate-100">{tooltip.total}</span>
           </p>
         </div>
       )}

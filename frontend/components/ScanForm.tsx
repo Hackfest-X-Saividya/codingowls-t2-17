@@ -57,13 +57,13 @@ export default function ScanForm() {
             }}
             placeholder="https://github.com/username/repo"
             disabled={loading}
-            className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:border-gray-400 transition-all disabled:opacity-50"
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition-all disabled:opacity-50"
           />
         </div>
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 bg-gray-900 text-white font-medium rounded-xl hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
+          className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
         >
           {loading ? (
             <>
@@ -87,7 +87,7 @@ export default function ScanForm() {
       </div>
 
       <div className="mt-4">
-        <p className="text-sm text-gray-500 mb-2">Try an example repo:</p>
+        <p className="text-sm text-slate-400 mb-2">Try an example repo:</p>
         <div className="flex flex-wrap gap-2">
           {EXAMPLE_REPOS.map((exampleUrl) => (
             <button
@@ -98,7 +98,7 @@ export default function ScanForm() {
                 setUrl(exampleUrl);
                 setError("");
               }}
-              className="px-3 py-1.5 text-sm bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-full hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {exampleUrl.replace("https://github.com/", "")}
             </button>
@@ -107,7 +107,7 @@ export default function ScanForm() {
       </div>
 
       {error && (
-        <p className="mt-3 text-sm text-red-600 flex items-center gap-1.5">
+        <p className="mt-3 text-sm text-red-400 flex items-center gap-1.5">
           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               strokeLinecap="round"

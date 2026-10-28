@@ -2,9 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+:root { color-scheme: dark; }
+
 body {
+  background: #020617;
   font-family: var(--font-geist-sans), system-ui, sans-serif;
-  color: #1f2937;
+  color: #e2e8f0;
 }
 
 code, pre {

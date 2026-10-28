@@ -1,0 +1,6 @@
+# Training environment only — never install these into backend/
+# Install PyTorch with CUDA separately first (see ml/README.md).
+transformers>=4.44,<5
+scikit-learn>=1.4
+numpy>=1.26,<2.3
+joblib>=1.3

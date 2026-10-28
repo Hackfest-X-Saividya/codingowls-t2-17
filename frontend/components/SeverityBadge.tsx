@@ -1,10 +1,10 @@
 "use client";
 
 const SEVERITY_STYLES: Record<string, string> = {
-  critical: "bg-red-50 text-red-700 border-red-200",
-  high: "bg-orange-50 text-orange-700 border-orange-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  low: "bg-blue-50 text-blue-700 border-blue-200",
+  critical: "bg-red-500/10 text-red-300 border-red-500/30",
+  high: "bg-orange-500/10 text-orange-300 border-orange-500/30",
+  medium: "bg-amber-500/10 text-amber-300 border-amber-500/30",
+  low: "bg-blue-500/10 text-blue-300 border-blue-500/30",
 };
 
 export default function SeverityBadge({ severity }: { severity: string }) {

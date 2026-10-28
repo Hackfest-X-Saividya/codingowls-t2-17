@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 interface CodeDiffProps {
   vulnerableCode: string;
@@ -34,16 +34,16 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
   };
 
   const codeStyle = {
-    ...oneLight,
+    ...oneDark,
     'pre[class*="language-"]': {
-      ...oneLight['pre[class*="language-"]'],
+      ...oneDark['pre[class*="language-"]'],
       background: "transparent",
       margin: 0,
       padding: "1rem",
       fontSize: "0.8125rem",
     },
     'code[class*="language-"]': {
-      ...oneLight['code[class*="language-"]'],
+      ...oneDark['code[class*="language-"]'],
       background: "transparent",
     },
   };
@@ -51,13 +51,13 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
   return (
     <div className="mt-4">
       <div className="flex items-center gap-2 mb-3">
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
+        <div className="flex bg-slate-800 rounded-lg p-0.5">
           {(["side-by-side", "vulnerable", "fixed"] as const).map((v) => (
             <button
               key={v}
               onClick={() => setView(v)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                view === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                view === v ? "bg-slate-900 text-slate-100 shadow-sm" : "text-slate-400 hover:text-slate-300"
               }`}
             >
               {v === "side-by-side" ? "Side by Side" : v === "vulnerable" ? "Vulnerable" : "Fixed"}
@@ -66,7 +66,7 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
         </div>
         <button
           onClick={copyFixed}
-          className="ml-auto px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+          className="ml-auto px-3 py-1.5 text-xs font-medium bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
         >
           {copied ? "Copied!" : "Copy Fix"}
         </button>
@@ -74,16 +74,16 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
 
       {view === "side-by-side" ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div className="rounded-lg overflow-hidden border border-red-200 bg-red-50/50">
-            <div className="px-3 py-1.5 bg-red-50 text-red-700 text-xs font-medium border-b border-red-200">
+          <div className="rounded-lg overflow-hidden border border-red-500/30 bg-red-500/5">
+            <div className="px-3 py-1.5 bg-red-500/10 text-red-300 text-xs font-medium border-b border-red-500/30">
               Vulnerable Code
             </div>
             <SyntaxHighlighter language={syntaxLang} style={codeStyle} showLineNumbers wrapLongLines>
               {vulnerableCode || "(not available)"}
             </SyntaxHighlighter>
           </div>
-          <div className="rounded-lg overflow-hidden border border-green-200 bg-green-50/50">
-            <div className="px-3 py-1.5 bg-green-50 text-green-700 text-xs font-medium border-b border-green-200">
+          <div className="rounded-lg overflow-hidden border border-green-500/30 bg-green-500/5">
+            <div className="px-3 py-1.5 bg-green-500/10 text-green-300 text-xs font-medium border-b border-green-500/30">
               Fixed Code
             </div>
             <SyntaxHighlighter language={syntaxLang} style={codeStyle} showLineNumbers wrapLongLines>
@@ -94,14 +94,14 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
       ) : (
         <div
           className={`rounded-lg overflow-hidden border ${
-            view === "vulnerable" ? "border-red-200 bg-red-50/50" : "border-green-200 bg-green-50/50"
+            view === "vulnerable" ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"
           }`}
         >
           <div
             className={`px-3 py-1.5 text-xs font-medium border-b ${
               view === "vulnerable"
-                ? "bg-red-50 text-red-700 border-red-200"
-                : "bg-green-50 text-green-700 border-green-200"
+                ? "bg-red-500/10 text-red-300 border-red-500/30"
+                : "bg-green-500/10 text-green-300 border-green-500/30"
             }`}
           >
             {view === "vulnerable" ? "Vulnerable Code" : "Fixed Code"}

@@ -6,7 +6,7 @@ import { getScanStatus, type ScanStatusResponse } from "@/lib/api";
 const STEP_LABELS: Record<string, string> = {
   clone_repo: "Clone repository",
   detect_language: "Detect languages",
-  analyze: "Run Semgrep security scan",
+  analyze: "Run static code analysis",
   parse_results: "Parse results",
   scan_dependencies: "Check dependencies",
   scan_secrets: "Scan for secrets",
@@ -15,8 +15,8 @@ const STEP_LABELS: Record<string, string> = {
 
 const STEP_DETAILS: Record<string, string> = {
   clone_repo: "Shallow-cloning target repository (depth=1) for faster startup.",
-  detect_language: "Detecting every language in the repo to select Semgrep rulesets.",
-  analyze: "Running Semgrep security rules including OWASP-focused checks.",
+  detect_language: "Detecting every language in the repo to select the right analysis rules.",
+  analyze: "Running static security rules including OWASP-focused checks.",
   parse_results: "Parsing SARIF output into normalized vulnerability findings.",
   scan_dependencies: "Matching pinned package versions against the OSV.dev vulnerability database.",
   scan_secrets: "Looking for hardcoded API keys, tokens, private keys and passwords.",
@@ -167,40 +167,40 @@ export default function ProgressTracker({ scanId, onComplete, onError }: Progres
 
   return (
     <div className="max-w-3xl mx-auto mt-12 px-4">
-      <div className="bg-white border border-gray-200 rounded-xl p-6">
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Scanning Repository</h2>
-          <span className="text-sm text-gray-500">{progress}%</span>
+          <h2 className="text-lg font-semibold text-slate-100">Scanning Repository</h2>
+          <span className="text-sm text-slate-400">{progress}%</span>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <div className="rounded-lg bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Elapsed</p>
-            <p className="text-lg font-semibold text-gray-900">{formatDuration(elapsedSeconds)}</p>
+          <div className="rounded-lg bg-slate-800/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Elapsed</p>
+            <p className="text-lg font-semibold text-slate-100">{formatDuration(elapsedSeconds)}</p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">ETA</p>
-            <p className="text-lg font-semibold text-gray-900">
+          <div className="rounded-lg bg-slate-800/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">ETA</p>
+            <p className="text-lg font-semibold text-slate-100">
               {etaSeconds === null ? "--:--" : formatDuration(etaSeconds)}
             </p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Completed</p>
-            <p className="text-lg font-semibold text-gray-900">
+          <div className="rounded-lg bg-slate-800/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Completed</p>
+            <p className="text-lg font-semibold text-slate-100">
               {completedSteps.length}/{ALL_STEPS.length}
             </p>
           </div>
-          <div className="rounded-lg bg-gray-50 p-3">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Current Step</p>
-            <p className="text-sm font-semibold text-gray-900">
+          <div className="rounded-lg bg-slate-800/50 p-3">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Current Step</p>
+            <p className="text-sm font-semibold text-slate-100">
               {currentStepKey ? STEP_LABELS[currentStepKey] : "Waiting"}
             </p>
           </div>
         </div>
 
-        <div className="w-full bg-gray-200 rounded-full h-2 mb-6 overflow-hidden">
+        <div className="w-full bg-slate-700 rounded-full h-2 mb-6 overflow-hidden">
           <div
-            className="h-full bg-gray-900 rounded-full transition-all duration-500 ease-out"
+            className="h-full bg-indigo-600 rounded-full transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -217,71 +217,71 @@ export default function ProgressTracker({ scanId, onComplete, onError }: Progres
                 key={step}
                 className={`rounded-lg border p-3 transition-colors ${
                   isCurrent
-                    ? "border-gray-300 bg-gray-50"
+                    ? "border-slate-700 bg-slate-800/50"
                     : isCompleted
-                    ? "border-gray-200 bg-white"
-                    : "border-gray-100 bg-white"
+                    ? "border-slate-800 bg-slate-900"
+                    : "border-slate-800 bg-slate-900"
                 }`}
               >
                 <div className="flex items-center gap-3">
                   <div className="w-6 h-6 flex items-center justify-center shrink-0">
                     {isCompleted ? (
-                      <svg className="w-5 h-5 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-slate-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
                     ) : isCurrent ? (
-                      <div className="w-4 h-4 rounded-full border-2 border-gray-900 border-t-transparent animate-spin" />
+                      <div className="w-4 h-4 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
                     ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-gray-300" />
+                      <div className="w-4 h-4 rounded-full border-2 border-slate-700" />
                     )}
                   </div>
                   <span
                     className={`text-sm ${
                       isCompleted
-                        ? "text-gray-900"
+                        ? "text-slate-100"
                         : isCurrent
-                        ? "text-gray-900 font-medium"
-                        : "text-gray-400"
+                        ? "text-slate-100 font-medium"
+                        : "text-slate-500"
                     }`}
                   >
                     {STEP_LABELS[step]}
                   </span>
                   {isCompleted && stepCompletedAt[step] && (
-                    <span className="text-xs text-gray-500 ml-auto">
+                    <span className="text-xs text-slate-400 ml-auto">
                       done {formatClock(stepCompletedAt[step])}
                     </span>
                   )}
                   {isCurrent && (
-                    <span className="text-xs text-gray-500 ml-auto">
+                    <span className="text-xs text-slate-400 ml-auto">
                       active {formatDuration(stepRuntime)}
                     </span>
                   )}
                 </div>
 
                 {(isCurrent || isCompleted) && (
-                  <p className="mt-2 text-xs text-gray-500">{STEP_DETAILS[step]}</p>
+                  <p className="mt-2 text-xs text-slate-400">{STEP_DETAILS[step]}</p>
                 )}
               </div>
             );
           })}
         </div>
 
-        <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
+        <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
           <span>
             Active stage duration:{" "}
-            <span className="font-medium text-gray-700">{formatDuration(activeStepSeconds)}</span>
+            <span className="font-medium text-slate-300">{formatDuration(activeStepSeconds)}</span>
           </span>
           <span>
             Last update:{" "}
-            <span className="font-medium text-gray-700">
+            <span className="font-medium text-slate-300">
               {lastUpdatedAt ? formatClock(lastUpdatedAt) : "--:--:--"}
             </span>
           </span>
         </div>
 
         {status?.status === "failed" && status.error && (
-          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-sm text-red-600">{status.error}</p>
+          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+            <p className="text-sm text-red-400">{status.error}</p>
           </div>
         )}
       </div>

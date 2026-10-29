@@ -1,0 +1,11 @@
+# Railway service settings: Root Directory = /runtime, Config File Path = /runtime/railway.toml
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+# Sleep when nobody is using it; the next request wakes it (first check takes a few seconds longer)
+sleepApplication = true

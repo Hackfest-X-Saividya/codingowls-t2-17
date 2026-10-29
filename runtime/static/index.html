@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Runtime Error Check</title>
+<style>
+  :root {
+    --bg: #020617; --panel: #0f172a; --panel-2: #1e293b; --line: #1e293b; --line-2: #334155;
+    --ink: #f1f5f9; --ink-2: #cbd5e1; --muted: #94a3b8; --faint: #64748b;
+    --accent: #6366f1; --accent-ink: #c7d2fe;
+    --high: #f87171; --high-bg: rgba(248,113,113,.12);
+    --medium: #fbbf24; --medium-bg: rgba(251,191,36,.12);
+    --low: #60a5fa; --low-bg: rgba(96,165,250,.12);
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 24px; margin: 0; }
+  .sub { color: var(--muted); margin: 4px 0 24px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=url], input[type=search] {
+    flex: 1; min-width: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line-2);
+    background: var(--panel); color: var(--ink); font: inherit;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; }
+  .primary { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; }
+  .primary:disabled { opacity: .6; cursor: wait; }
+  .status { margin-top: 16px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error { margin-top: 16px; padding: 12px 14px; border-radius: 8px; border: 1px solid rgba(248,113,113,.35); background: var(--high-bg); color: #fecaca; }
+  .head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 32px; }
+  .head h2 { margin: 0; font-size: 18px; }
+  .head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-top: 16px; }
+  .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tile b { display: block; font-size: 26px; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: 12px; }
+  .tile.high b { color: var(--high); } .tile.medium b { color: var(--medium); } .tile.low b { color: var(--low); }
+  .notes { margin-top: 16px; padding: 12px 16px; border-radius: 12px; background: var(--medium-bg); border: 1px solid rgba(251,191,36,.3); color: #fde68a; }
+  .notes ul { margin: 4px 0 0; padding-left: 18px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 24px 0 12px; align-items: center; }
+  .chip { padding: 6px 12px; border-radius: 8px; border: 0; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 600; }
+  .chip[aria-pressed=true] { background: var(--accent); color: #fff; }
+  .file { margin-top: 16px; }
+  .file h3 { font: 600 13px var(--mono); color: var(--ink-2); margin: 0 0 8px; word-break: break-all; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; overflow: hidden; }
+  .card > button { all: unset; box-sizing: border-box; width: 100%; display: flex; gap: 12px; align-items: flex-start; padding: 12px 16px; cursor: pointer; }
+  .card > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .card:hover { border-color: var(--line-2); }
+  .sev { flex: none; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; }
+  .sev.high { background: var(--high-bg); color: var(--high); }
+  .sev.medium { background: var(--medium-bg); color: var(--medium); }
+  .sev.low { background: var(--low-bg); color: var(--low); }
+  .card .main { flex: 1; min-width: 0; }
+  .card .msg { font-weight: 500; overflow-wrap: anywhere; }
+  .card .meta { color: var(--faint); font-size: 12px; margin-top: 2px; }
+  .card .meta code { font-family: var(--mono); color: var(--muted); }
+  .chev { flex: none; color: var(--faint); transition: transform .15s; }
+  .card.open .chev { transform: rotate(180deg); }
+  .detail { display: none; padding: 0 16px 16px; border-top: 1px solid var(--line); }
+  .card.open .detail { display: block; }
+  .detail h4 { margin: 14px 0 4px; font-size: 13px; color: var(--ink-2); }
+  .detail p { margin: 0; color: var(--muted); }
+  pre { margin: 0; padding: 10px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; font: 12.5px/1.6 var(--mono); }
+  pre .ln { display: block; padding: 0 12px; white-space: pre; }
+  pre .ln i { display: inline-block; width: 4ch; margin-right: 12px; color: var(--faint); text-align: right; font-style: normal; user-select: none; }
+  pre .ln.hit { background: var(--high-bg); box-shadow: inset 3px 0 var(--high); }
+  .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+  .how { margin-top: 40px; color: var(--faint); font-size: 12px; }
+  @media (max-width: 560px) { .primary { width: 100%; } h1 { font-size: 20px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Runtime error check</h1>
+  <p class="sub">Finds code that will crash when it runs (syntax errors, undefined names, broken imports, wrong arguments) by reading the source. The repository's code is never executed.</p>
+
+  <form id="form">
+    <input id="url" type="url" required placeholder="https://github.com/owner/repo" autocomplete="url" aria-label="GitHub repository URL">
+    <button id="go" class="primary" type="submit">Check repository</button>
+  </form>
+  <div id="status" class="status" hidden><span class="spin" aria-hidden="true"></span><span id="status-text"></span></div>
+  <div id="error" class="error" role="alert" hidden></div>
+
+  <section id="results" hidden aria-live="polite">
+    <div class="head">
+      <div>
+        <h2 id="repo"></h2>
+        <p id="checked"></p>
+      </div>
+    </div>
+    <div class="tiles" id="tiles"></div>
+    <div class="notes" id="notes" hidden><strong>Coverage notes</strong><ul id="notes-list"></ul></div>
+    <div class="filters">
+      <button class="chip" data-sev="all" aria-pressed="true">All</button>
+      <button class="chip" data-sev="high" aria-pressed="false">High</button>
+      <button class="chip" data-sev="medium" aria-pressed="false">Medium</button>
+      <button class="chip" data-sev="low" aria-pressed="false">Low</button>
+      <input id="q" type="search" placeholder="Filter by file, error or message" aria-label="Filter problems">
+    </div>
+    <div id="list"></div>
+  </section>
+
+  <p class="how">Checks Python (syntax, NameError, UnboundLocalError, in-repo ImportError, wrong call arguments, broken format strings) and JavaScript syntax. Third-party packages and errors that depend on data or configuration are only visible when the code actually runs.</p>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let report = null, sev = "all";
+
+  const store = {
+    get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+    set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+  };
+  $("url").value = new URLSearchParams(location.search).get("repo") || store.get("runtime-last-url") || "";
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const url = $("url").value.trim();
+    store.set("runtime-last-url", url);
+    $("error").hidden = true;
+    $("go").disabled = true;
+    $("status").hidden = false;
+    const started = Date.now();
+    const tick = () => { $("status-text").textContent = `Cloning and checking… ${Math.floor((Date.now() - started) / 1000)}s`; };
+    tick();
+    const timer = setInterval(tick, 1000);
+    try {
+      const res = await fetch("/api/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repo_url: url }) });
+      const data = await res.json().catch(() => ({ detail: `Server answered ${res.status}` }));
+      if (!res.ok) throw new Error(data.detail || `Server answered ${res.status}`);
+      report = data;
+      sev = "all";
+      $("q").value = "";
+      render();
+    } catch (err) {
+      $("error").textContent = err.message || "The check failed.";
+      $("error").hidden = false;
+    } finally {
+      clearInterval(timer);
+      $("status").hidden = true;
+      $("go").disabled = false;
+    }
+  });
+
+  document.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => { sev = b.dataset.sev; renderList(); }));
+  $("q").addEventListener("input", renderList);
+
+  function render() {
+    const r = report;
+    $("results").hidden = false;
+    $("repo").innerHTML = `<a href="${esc(r.repo_url)}" target="_blank" rel="noopener noreferrer" style="color:inherit">${esc(r.repo_name)}</a>`;
+    $("checked").textContent = `${r.files_checked.python} Python and ${r.files_checked.javascript} JavaScript files checked`
+      + (r.commit ? ` · commit ${r.commit.slice(0, 7)}` : "");
+    const s = r.summary;
+    $("tiles").innerHTML = [["total", "Runtime problems", s.total], ["high", "High: file fails to load", s.high],
+      ["medium", "Medium: crashes when reached", s.medium], ["low", "Low", s.low]]
+      .map(([k, label, n]) => `<div class="tile ${k}"><b>${n}</b><span>${esc(label)}</span></div>`).join("");
+    $("notes").hidden = !r.warnings.length;
+    $("notes-list").innerHTML = r.warnings.map((w) => `<li>${esc(w)}</li>`).join("");
+    renderList();
+  }
+
+  function renderList() {
+    document.querySelectorAll(".chip").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.sev === sev)));
+    const q = $("q").value.trim().toLowerCase();
+    const shown = report.problems.filter((p) => (sev === "all" || p.severity === sev)
+      && (!q || [p.file, p.error, p.message, p.title].some((t) => t.toLowerCase().includes(q))));
+    if (!shown.length) {
+      $("list").innerHTML = `<p class="empty">${report.problems.length ? "No problems match the filters." : "No runtime problems found."}</p>`;
+      return;
+    }
+    const byFile = new Map();
+    for (const p of shown) byFile.set(p.file, [...(byFile.get(p.file) || []), p]);
+    $("list").innerHTML = [...byFile].map(([file, ps]) => `
+      <div class="file"><h3>${esc(file)} <span style="color:var(--faint);font-weight:400">· ${ps.length}</span></h3>
+      ${ps.map(card).join("")}</div>`).join("");
+    $("list").querySelectorAll(".card > button").forEach((b) => b.addEventListener("click", () => {
+      const open = b.parentElement.classList.toggle("open");
+      b.setAttribute("aria-expanded", String(open));
+    }));
+  }
+
+  function card(p) {
+    const code = p.code.split("\n").map((l, i) => {
+      const n = p.code_start + i;
+      return `<span class="ln${n === p.line ? " hit" : ""}"><i>${n}</i>${esc(l) || " "}</span>`;
+    }).join("");
+    return `<div class="card">
+      <button aria-expanded="false">
+        <span class="sev ${esc(p.severity)}">${esc(p.severity)}</span>
+        <span class="main">
+          <div class="msg">${esc(p.error)}: ${esc(p.message)}</div>
+          <div class="meta">line ${p.line} · <code>${esc(p.rule)}</code></div>
+        </span>
+        <svg class="chev" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div class="detail">
+        <h4>${esc(p.title)}</h4><p>${esc(p.explanation)}</p>
+        <h4>Impact</h4><p>${esc(p.impact)}</p>
+        ${p.code ? `<h4>Code</h4><pre>${code}</pre>` : ""}
+        <h4>Confidence</h4><p>${Math.round(p.confidence * 100)}%</p>
+      </div>
+    </div>`;
+  }
+})();
+</script>
+</body>
+</html>

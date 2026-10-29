@@ -1,0 +1,35 @@
+# Fly.io app for the runtime-error checker. Change `app` to a name of your own before the first deploy.
+app = "runtime-checker-change-me"
+primary_region = "bom"  # nearest region; `fly platform regions` lists them
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # No machine runs while nobody uses the page; a request starts one in a few seconds
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 2
+    hard_limit = 4
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -125,7 +125,7 @@ export default function ResultsPage() {
           </svg>
           <h2 className="text-xl font-semibold text-red-300 mb-2">Scan Failed</h2>
           <p className="text-slate-400">{error}</p>
-          <a href="/" className="inline-block mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm hover:bg-indigo-700 transition-colors">
+          <a href="/" className="inline-block mt-4 px-5 py-2 bg-white text-black font-semibold rounded-full text-sm hover:bg-slate-200 transition-colors">
             Try Again
           </a>
         </div>
@@ -136,20 +136,23 @@ export default function ResultsPage() {
   if (!results) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="relative">
+      <div className="page-glow pointer-events-none absolute inset-x-0 top-0 h-64" aria-hidden="true" />
+    <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-2xl font-bold">{results.repo_name}</h1>
+          <p className="text-sm font-medium text-indigo-300">Scan report</p>
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-white break-all">{results.repo_name}</h1>
           <p className="text-sm text-slate-400 mt-1">
             Scanned {new Date(results.scanned_at).toLocaleString()} &middot;{" "}
             {results.languages?.length ? results.languages.join(", ") : results.language}
           </p>
         </div>
-        <div className="flex items-center gap-2 self-start">
+        <div className="flex flex-wrap items-center gap-2 self-start">
           <a
             href="/"
-            className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800/50 transition-colors flex items-center gap-2"
+            className="px-4 py-2 bg-slate-900 border border-white/10 rounded-full text-sm text-slate-300 hover:text-white hover:border-white/20 transition-colors flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
@@ -163,7 +166,7 @@ export default function ResultsPage() {
           </a>
           <a
             href="#attack-chains"
-            className="px-4 py-2 bg-indigo-600/20 border border-indigo-500/40 rounded-lg text-sm text-indigo-200 hover:bg-indigo-600/30 transition-colors"
+            className="px-4 py-2 bg-indigo-600 rounded-full text-sm font-medium text-snow hover:bg-indigo-500 transition-colors"
           >
             Attack chains ({results.chains?.length ?? 0})
           </a>
@@ -171,10 +174,10 @@ export default function ResultsPage() {
             onClick={exportPdfReport}
             disabled={exportingPdf}
             title="PDF with every finding: summary, index and full details"
-            className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800/50 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-wait"
+            className="px-4 py-2 bg-white rounded-full text-sm font-semibold text-black hover:bg-slate-200 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-wait"
           >
             {exportingPdf ? (
-              <span className="w-4 h-4 rounded-full border-2 border-slate-600 border-t-transparent animate-spin" aria-hidden="true" />
+              <span className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" aria-hidden="true" />
             ) : (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -186,7 +189,7 @@ export default function ResultsPage() {
             href={getScanSarifUrl(scanId)}
             download={`scan-${scanId}.sarif`}
             title="SARIF 2.1.0 — upload to GitHub code scanning or other security tools"
-            className="px-4 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800/50 transition-colors"
+            className="px-4 py-2 bg-slate-900 border border-white/10 rounded-full text-sm text-slate-300 hover:text-white hover:border-white/20 transition-colors"
           >
             Export SARIF
           </a>
@@ -229,14 +232,14 @@ export default function ResultsPage() {
       />
 
       {/* Category tabs */}
-      <div id="findings-list" className="flex gap-1 mt-8 border-b border-slate-800 overflow-x-auto scroll-mt-4">
+      <div id="findings-list" className="flex gap-1 mt-8 border-b border-white/10 overflow-x-auto scroll-mt-20">
         {CATEGORY_TABS.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setCategoryFilter(key)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px whitespace-nowrap transition-colors ${
               categoryFilter === key
-                ? "border-indigo-400 text-indigo-300"
+                ? "border-indigo-500 text-white"
                 : "border-transparent text-slate-400 hover:text-slate-300"
             }`}
           >
@@ -252,10 +255,10 @@ export default function ResultsPage() {
             <button
               key={sev}
               onClick={() => setSeverityFilter(sev)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
                 severityFilter === sev
-                  ? "bg-indigo-600 text-white"
-                  : "bg-slate-800 text-slate-400 hover:text-slate-300"
+                  ? "bg-indigo-600 text-snow"
+                  : "bg-slate-900 border border-white/10 text-slate-400 hover:text-slate-200"
               }`}
             >
               {sev === "all" ? "All" : <SeverityBadge severity={sev} />}
@@ -267,7 +270,7 @@ export default function ResultsPage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search vulnerabilities..."
-          className="flex-1 px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="flex-1 px-4 py-1.5 bg-slate-900 border border-white/10 rounded-full text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
         />
       </div>
 
@@ -292,6 +295,7 @@ export default function ResultsPage() {
           ))
         )}
       </div>
+    </div>
     </div>
   );
 }

@@ -183,7 +183,7 @@ function EmptyChains({
         <button
           onClick={rescan}
           disabled={busy}
-          className="mt-3 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait"
+          className="mt-3 px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-snow hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait"
         >
           {busy ? "Starting…" : "Re-scan now"}
         </button>
@@ -229,7 +229,7 @@ function ChainCard({
   }, [chain.id]);
 
   return (
-    <div id={`chain-${chain.id}`} className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden scroll-mt-4">
+    <div id={`chain-${chain.id}`} className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden scroll-mt-4">
       <button onClick={() => setExpanded(!expanded)} className="w-full text-left px-5 py-4 flex items-start gap-4">
         <div className="mt-0.5 flex flex-col items-start gap-1.5">
           <SeverityBadge severity={chain.severity} />

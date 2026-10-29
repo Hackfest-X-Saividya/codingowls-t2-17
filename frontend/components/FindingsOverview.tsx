@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FindingCategory, Vulnerability } from "@/lib/api";
+import { useTheme, type Theme } from "@/lib/theme";
 
 /*
  * "How findings relate", drawn like a neural network:
@@ -19,14 +20,6 @@ import type { FindingCategory, Vulnerability } from "@/lib/api";
 const SEVERITIES = ["critical", "high", "medium", "low"] as const;
 type Severity = (typeof SEVERITIES)[number];
 
-// Severity is ordered, so it gets one ordinal ramp (lighter = more severe on the dark surface).
-// Validated with the dataviz validator (--ordinal, dark, slate-900 surface): all checks pass.
-const SEVERITY_FILL: Record<Severity, string> = {
-  critical: "#cfe2fb",
-  high: "#86b6ef",
-  medium: "#3987e5",
-  low: "#2a69ba",
-};
 
 const SEVERITY_LABEL: Record<Severity, string> = {
   critical: "Critical",
@@ -41,13 +34,40 @@ const TYPES: { key: FindingCategory; label: string }[] = [
   { key: "secret", label: "Secrets" },
 ];
 
-// Chart chrome (text tokens / neutrals; colour only ever encodes severity)
-const INK = "#f1f5f9";
-const INK_2 = "#cbd5e1";
-const MUTED = "#94a3b8";
-const NEUTRAL_NODE = "#64748b";
-const NEUTRAL_EDGE = "#475569";
-const SURFACE = "#0f172a";
+// Severity is ordered, so it gets one ordinal ramp: the most severe step has the most contrast
+// with the panel (lightest on dark, darkest on light). Both validated with the dataviz validator
+// (--ordinal; dark on #151515, light on #ffffff): all checks pass.
+// The rest is chart chrome (text tokens / neutrals; colour only ever encodes severity).
+interface ChartPalette {
+  severity: Record<Severity, string>;
+  ink: string;
+  ink2: string;
+  muted: string;
+  node: string;
+  edge: string;
+  surface: string;
+}
+
+const PALETTES: Record<Theme, ChartPalette> = {
+  dark: {
+    severity: { critical: "#e9dcfb", high: "#bf94f2", medium: "#9a5ce6", low: "#7a35d4" },
+    ink: "#f5f5f5",
+    ink2: "#d4d4d4",
+    muted: "#a3a3a3",
+    node: "#737373",
+    edge: "#4a4a4a",
+    surface: "#151515",
+  },
+  light: {
+    severity: { critical: "#350e63", high: "#5616a3", medium: "#7f33d6", low: "#a874ea" },
+    ink: "#17171a",
+    ink2: "#3a3a40",
+    muted: "#6b6b72",
+    node: "#8a8a91",
+    edge: "#c2c2c7",
+    surface: "#ffffff",
+  },
+};
 
 const MAX_HIDDEN = 8;
 const OTHER = "__other__";
@@ -125,6 +145,7 @@ function edgePath(x1: number, y1: number, x2: number, y2: number): string {
 }
 
 function SeverityLegend() {
+  const { severity: SEVERITY_FILL, edge: NEUTRAL_EDGE } = PALETTES[useTheme()];
   return (
     <ul className="flex flex-wrap items-center gap-x-4 gap-y-1" aria-label="Severity legend">
       {SEVERITIES.map((s) => (
@@ -199,6 +220,15 @@ export default function FindingsOverview({
   const [width, setWidth] = useState(960);
   const [active, setActive] = useState<NodeRef | null>(null);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
+  const {
+    severity: SEVERITY_FILL,
+    ink: INK,
+    ink2: INK_2,
+    muted: MUTED,
+    node: NEUTRAL_NODE,
+    edge: NEUTRAL_EDGE,
+    surface: SURFACE,
+  } = PALETTES[useTheme()];
 
   // Draw in real pixels (viewBox = rendered width) so text stays at its true size
   useEffect(() => {
@@ -462,7 +492,7 @@ export default function FindingsOverview({
   return (
     <section
       ref={containerRef}
-      className="relative mt-6 bg-slate-900 border border-slate-800 rounded-xl p-5"
+      className="relative mt-6 bg-slate-900 border border-white/10 rounded-2xl p-5"
       aria-labelledby="findings-overview-title"
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 mb-2">

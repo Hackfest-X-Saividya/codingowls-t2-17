@@ -12,12 +12,12 @@ const STAT_CARDS = [
 export default function SummaryStats({ summary }: { summary: ScanSummary }) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+      <div className="bg-slate-900 border border-white/10 rounded-2xl p-5">
         <p className="text-sm text-slate-400">Total Issues</p>
         <p className="text-3xl font-bold mt-1 text-slate-100">{summary.total}</p>
       </div>
       {STAT_CARDS.map(({ key, label, accentColor, textColor }) => (
-        <div key={key} className="bg-slate-900 border border-slate-800 rounded-xl p-5 relative overflow-hidden">
+        <div key={key} className="bg-slate-900 border border-white/10 rounded-2xl p-5 relative overflow-hidden">
           <div className={`absolute top-0 left-0 w-1 h-full ${accentColor}`} />
           <p className="text-sm text-slate-400">{label}</p>
           <p className={`text-3xl font-bold mt-1 ${textColor}`}>{summary[key]}</p>

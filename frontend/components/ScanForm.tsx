@@ -46,49 +46,47 @@ export default function ScanForm() {
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-2xl mx-auto">
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex-1">
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              setError("");
-            }}
-            placeholder="https://github.com/username/repo"
-            disabled={loading}
-            className="w-full px-4 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400 transition-all disabled:opacity-50"
-          />
-        </div>
+      <div className="flex items-center gap-2 rounded-full border border-white/10 bg-slate-900/90 p-1.5 pl-5 shadow-[0_0_40px_rgba(104,28,197,0.25)] focus-within:border-indigo-500 transition-colors">
+        <svg className="w-5 h-5 text-slate-500 shrink-0" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 .5a12 12 0 00-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1.1-.7.1-.7.1-.7 1.2.1 1.9 1.3 1.9 1.3 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.3-3.2-.1-.3-.6-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 016 0C17.3 4.7 18.3 5 18.3 5c.7 1.7.2 2.9.1 3.2.8.8 1.3 1.9 1.3 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0012 .5z" />
+        </svg>
+        <input
+          type="text"
+          value={url}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            setError("");
+          }}
+          placeholder="https://github.com/username/repo"
+          aria-label="GitHub repository URL"
+          disabled={loading}
+          className="flex-1 min-w-0 bg-transparent py-2 text-slate-100 placeholder-slate-500 focus:outline-none disabled:opacity-50"
+        />
         <button
           type="submit"
           disabled={loading}
-          className="px-6 py-3 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
+          className="px-4 sm:px-6 py-2.5 bg-white text-black font-semibold rounded-full hover:bg-slate-200 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
         >
           {loading ? (
             <>
-              <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+              <div className="w-4 h-4 rounded-full border-2 border-black border-t-transparent animate-spin" />
               Starting...
             </>
           ) : (
             <>
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
-                />
+              <span className="sm:hidden">Scan</span>
+              <span className="hidden sm:inline">Scan repository</span>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 12h14m-6-6l6 6-6 6" />
               </svg>
-              Scan Repository
             </>
           )}
         </button>
       </div>
 
-      <div className="mt-4">
-        <p className="text-sm text-slate-400 mb-2">Try an example repo:</p>
-        <div className="flex flex-wrap gap-2">
+      <div className="mt-5">
+        <p className="text-sm text-slate-500 mb-2">Try an example repo:</p>
+        <div className="flex flex-wrap justify-center gap-2">
           {EXAMPLE_REPOS.map((exampleUrl) => (
             <button
               key={exampleUrl}
@@ -98,7 +96,7 @@ export default function ScanForm() {
                 setUrl(exampleUrl);
                 setError("");
               }}
-              className="px-3 py-1.5 text-sm bg-slate-800 text-slate-300 rounded-full hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 text-sm bg-slate-900/80 border border-white/10 text-slate-300 rounded-full hover:border-indigo-500/60 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {exampleUrl.replace("https://github.com/", "")}
             </button>
@@ -107,7 +105,7 @@ export default function ScanForm() {
       </div>
 
       {error && (
-        <p className="mt-3 text-sm text-red-400 flex items-center gap-1.5">
+        <p className="mt-3 text-sm text-red-400 flex items-center justify-center gap-1.5">
           <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path
               strokeLinecap="round"

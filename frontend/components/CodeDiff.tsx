@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { useTheme } from "@/lib/theme";
 
 interface CodeDiffProps {
   vulnerableCode: string;
@@ -33,17 +34,18 @@ export default function CodeDiff({ vulnerableCode, fixedCode, language = "python
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const base = useTheme() === "light" ? oneLight : oneDark;
   const codeStyle = {
-    ...oneDark,
+    ...base,
     'pre[class*="language-"]': {
-      ...oneDark['pre[class*="language-"]'],
+      ...base['pre[class*="language-"]'],
       background: "transparent",
       margin: 0,
       padding: "1rem",
       fontSize: "0.8125rem",
     },
     'code[class*="language-"]': {
-      ...oneDark['code[class*="language-"]'],
+      ...base['code[class*="language-"]'],
       background: "transparent",
     },
   };

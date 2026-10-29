@@ -170,7 +170,7 @@ export default function ProgressTracker({ scanId, onComplete, onError }: Progres
 
   return (
     <div className="max-w-3xl mx-auto mt-12 px-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-100">Scanning Repository</h2>
           <span className="text-sm text-slate-400">{progress}%</span>

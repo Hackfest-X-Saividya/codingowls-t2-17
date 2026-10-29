@@ -58,7 +58,7 @@ export default function FindingFixPanel({
         <button
           onClick={() => run()}
           disabled={running}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait"
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-indigo-600 text-snow hover:bg-indigo-700 disabled:opacity-60 disabled:cursor-wait"
         >
           {running ? "Validating…" : "Validate fix"}
         </button>

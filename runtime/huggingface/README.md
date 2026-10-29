@@ -3,8 +3,10 @@ title: Runtime Error Check
 emoji: 🔎
 colorFrom: indigo
 colorTo: gray
-sdk: docker
-app_port: 8080
+sdk: gradio
+sdk_version: 5.23.1
+python_version: "3.12"
+app_file: app.py
 pinned: false
 ---
 
